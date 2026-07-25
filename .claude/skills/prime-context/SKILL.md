@@ -9,7 +9,7 @@ Run this before any non-trivial implementation, debugging, or review work so edi
 
 ## Gather
 
-- Read `CLAUDE.md` at the repo root first (project instructions override defaults). There is no root `README.md` yet; `frontend/README.md` is the create-next-app default.
+- Read `CLAUDE.md` at the repo root first (project instructions override defaults). The root `README.md` is still a one-line placeholder; `frontend/README.md` is the create-next-app default.
 - Capture git context up front:
   - `git status --short --branch`
   - current branch or detached HEAD
