@@ -1,6 +1,6 @@
-import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { backendUrl, callBackend } from "../lib/backend";
 import styles from "./me.module.css";
 
 export const metadata: Metadata = {
@@ -38,72 +38,29 @@ export default function MePage() {
 }
 
 async function BackendIdentity() {
-  const { getToken } = await auth();
-  const token = await getToken();
+  // Same server-side seam the /documents page uses: it reads the Clerk token, calls
+  // BACKEND_URL, and reports transport failures as status 0 rather than throwing.
+  const result = await callBackend<MeResponse>("/me");
 
-  // Defense-in-depth: proxy.ts already redirects signed-out users to sign-in.
-  if (!token) {
-    return (
-      <section className={`${styles.card} ${styles.warn}`}>
-        <p className={styles.cardTitle}>No session token</p>
-        <p className={styles.muted}>
-          You don&apos;t have an active session. Try signing in again.
-        </p>
-      </section>
-    );
-  }
-
-  const base = process.env.BACKEND_URL ?? "http://localhost:5114";
-
-  let res: Response;
-  try {
-    res = await fetch(`${base}/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-      cache: "no-store",
-    });
-  } catch (err) {
-    const cause =
-      err instanceof Error && err.cause ? (err.cause as { code?: string }) : undefined;
-    const message = err instanceof Error ? err.message : String(err);
-    const detail = cause?.code ? `${message} (${cause.code})` : message;
-    const refused = /ECONNREFUSED|ENOTFOUND|EAI_AGAIN/i.test(
-      `${message} ${cause?.code ?? ""}`,
-    );
-    return (
-      <section className={`${styles.card} ${styles.error}`}>
-        <p className={styles.cardTitle}>❌ Could not reach the backend</p>
-        <p className={styles.muted}>
-          <code>
-            {base}/me
-          </code>{" "}
-          — {detail}
-        </p>
-        {refused ? (
-          <p className={styles.hint}>
-            The backend isn&apos;t running on the expected URL/port. Start it
-            with the http profile (<code>dotnet run --project LoopedIn.Api
-            --launch-profile http</code>, which listens on <code>5114</code>) or
-            point <code>BACKEND_URL</code> at the right address.
+  if (!result.ok) {
+    if (result.status === 0) {
+      return (
+        <section className={`${styles.card} ${styles.error}`}>
+          <p className={styles.cardTitle}>❌ Could not reach the backend</p>
+          <p className={styles.muted}>
+            <code>{backendUrl()}/me</code> — {result.error}
           </p>
-        ) : null}
-      </section>
-    );
-  }
-
-  if (!res.ok) {
-    let detail = "";
-    try {
-      detail = (await res.text()).slice(0, 300);
-    } catch {
-      // ignore unreadable bodies
+        </section>
+      );
     }
+
     return (
       <section className={`${styles.card} ${styles.error}`}>
         <p className={styles.cardTitle}>
-          ❌ Backend rejected the request ({res.status})
+          ❌ Backend rejected the request ({result.status})
         </p>
-        {detail ? <p className={styles.muted}>{detail}</p> : null}
-        {res.status === 401 ? (
+        <p className={styles.muted}>{result.error}</p>
+        {result.status === 401 ? (
           <p className={styles.hint}>
             401 — the token was rejected. Check that the backend&apos;s{" "}
             <code>Clerk:Authority</code> matches this frontend&apos;s Clerk
@@ -114,7 +71,7 @@ async function BackendIdentity() {
     );
   }
 
-  const data = (await res.json()) as MeResponse;
+  const data = result.data;
 
   return (
     <section className={`${styles.card} ${styles.ok}`}>

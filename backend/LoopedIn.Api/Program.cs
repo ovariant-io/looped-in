@@ -3,6 +3,7 @@ using Amazon.Lambda.AspNetCoreServer.Hosting;
 using LoopedIn.Api.Endpoints;
 using LoopedIn.Api.Infrastructure.Authentication;
 using LoopedIn.Api.Infrastructure.Database;
+using LoopedIn.Api.Infrastructure.Diagnostics;
 using LoopedIn.Api.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,10 @@ builder.Services.AddClerkAuthentication(builder.Configuration);
 // the app still boots and the /documents endpoints report 503 with the reason.
 builder.Services.AddDocumentStorage(builder.Configuration);
 
+// Collapses repeated hits on the public */ping checks into one backend call per few seconds,
+// so an unauthenticated caller cannot drive unbounded Neon/S3 work. See ProbeCache.
+builder.Services.AddSingleton<ProbeCache>();
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline.
@@ -55,33 +60,39 @@ app.MapGet("/", () => "Hello World from LoopedIn.Api (.NET 10)")
     .WithName("GetHello");
 
 // Connectivity check against Neon Postgres. Returns 503 until DATABASE_URL is set.
-app.MapGet("/db/ping", async (IServiceProvider services, CancellationToken cancellationToken) =>
-{
-    var dataSource = services.GetService<NpgsqlDataSource>();
-    if (dataSource is null)
+// Public, so the result is cached briefly (ProbeCache) — the query is real work an anonymous
+// caller would otherwise be able to repeat as fast as the gateway allows.
+app.MapGet("/db/ping", (IServiceProvider services, ProbeCache probes) =>
+    probes.GetOrProbeAsync("db", async () =>
     {
-        return Results.Problem(
-            "DATABASE_URL is not configured. Set it in backend/.env.local (see .env.local.example).",
-            statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-
-    try
-    {
-        await using var command = dataSource.CreateCommand("select version(), now()");
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        await reader.ReadAsync(cancellationToken);
-        return Results.Ok(new
+        var dataSource = services.GetService<NpgsqlDataSource>();
+        if (dataSource is null)
         {
-            connected = true,
-            version = reader.GetString(0),
-            serverTime = reader.GetFieldValue<DateTime>(1),
-        });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
-    }
-})
+            return Results.Problem(
+                "DATABASE_URL is not configured. Set it in backend/.env.local (see .env.local.example).",
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        try
+        {
+            // Deliberately NOT the request's CancellationToken: this task is shared by every
+            // caller that arrives during the TTL, so one client disconnecting must not cancel
+            // the probe the others are awaiting. The command timeout bounds it instead.
+            await using var command = dataSource.CreateCommand("select version(), now()");
+            await using var reader = await command.ExecuteReaderAsync(CancellationToken.None);
+            await reader.ReadAsync(CancellationToken.None);
+            return Results.Ok(new
+            {
+                connected = true,
+                version = reader.GetString(0),
+                serverTime = reader.GetFieldValue<DateTime>(1),
+            });
+        }
+        catch (Exception ex)
+        {
+            return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+    }))
 .WithName("DbPing");
 
 // Connectivity check against Clerk's OIDC/JWKS discovery, using the SAME ConfigurationManager
@@ -108,6 +119,15 @@ app.MapGet("/auth/ping", async (
             statusCode: StatusCodes.Status503ServiceUnavailable);
     }
 
+    // Surfaced because an empty list is a real, invisible weakness rather than a neutral
+    // default: audience validation is off (Clerk session tokens carry no fixed `aud`), so with
+    // no authorized-party allow-list the API accepts ANY token this Clerk instance issued —
+    // including one minted for a third-party OAuth client that self-registered through Dynamic
+    // Client Registration and got a user to click Allow. Naming the origins in
+    // Clerk__AuthorizedParties is what narrows that to your own apps.
+    var authorizedParties = (configuration["Clerk:AuthorizedParties"] ?? string.Empty)
+        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
     try
     {
         var oidc = await options.ConfigurationManager.GetConfigurationAsync(cancellationToken);
@@ -118,6 +138,12 @@ app.MapGet("/auth/ping", async (
             issuer = oidc.Issuer,
             jwksUri = oidc.JwksUri,
             signingKeys = oidc.SigningKeys.Count,
+            authorizedParties,
+            authorizedPartiesWarning = authorizedParties.Length == 0
+                ? "Clerk:AuthorizedParties is unset, so every token issued by this Clerk instance is "
+                    + "accepted (audience validation is off by design). Set Clerk__AuthorizedParties to "
+                    + "the origins allowed to call this API."
+                : null,
         });
     }
     catch (Exception ex)

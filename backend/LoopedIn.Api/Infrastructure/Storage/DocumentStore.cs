@@ -25,6 +25,14 @@ public sealed class DocumentStore(IAmazonS3 s3, DocumentStorageOptions options)
     private const string DefaultContentType = "application/octet-stream";
 
     /// <summary>
+    /// Largest upload this store will sign. Exposed so the endpoint can reject an oversized
+    /// request — and name the limit in the error — before any S3 work happens. See
+    /// <see cref="DocumentStorageOptions.MaxUploadBytes"/> for the (important) caveat that
+    /// this bound is advisory rather than enforced by S3.
+    /// </summary>
+    public long MaxUploadBytes => options.MaxUploadBytes;
+
+    /// <summary>
     /// Proves the bucket is reachable and the role can list it, exercising the same permission
     /// the real endpoints need. Throws whatever S3 threw so the caller can report the reason.
     /// </summary>
@@ -72,6 +80,16 @@ public sealed class DocumentStore(IAmazonS3 s3, DocumentStorageOptions options)
 
             foreach (var item in response.S3Objects ?? [])
             {
+                // Checked BEFORE adding, not after: reaching the ceiling only means the list
+                // is truncated if there is still an object left over. Testing after the add
+                // would flag an owner with exactly MaxListedObjects documents as truncated
+                // and have the UI claim there is more to see when there isn't.
+                if (documents.Count >= options.MaxListedObjects)
+                {
+                    truncated = true;
+                    break;
+                }
+
                 if (item.Key is null
                     || !DocumentKey.TryParse(options.Prefix, ownerId, item.Key, out var id, out var filename))
                 {
@@ -85,12 +103,6 @@ public sealed class DocumentStore(IAmazonS3 s3, DocumentStorageOptions options)
                     filename,
                     item.Size ?? 0,
                     ToUtc(item.LastModified)));
-
-                if (documents.Count >= options.MaxListedObjects)
-                {
-                    truncated = true;
-                    break;
-                }
             }
 
             continuationToken = truncated ? null : response.NextContinuationToken;
@@ -152,6 +164,19 @@ public sealed class DocumentStore(IAmazonS3 s3, DocumentStorageOptions options)
     public async Task<DocumentDetail?> FindAsync(
         string ownerId,
         string documentId,
+        CancellationToken cancellationToken) =>
+        (await DescribeAsync(ownerId, documentId, cancellationToken))?.Detail;
+
+    /// <summary>
+    /// <see cref="FindAsync"/> plus the object's real key. Callers that go on to sign or
+    /// mutate the object want the key S3 actually reported rather than one rebuilt from the
+    /// filename: rebuilding round-trips through
+    /// <see cref="Uri.UnescapeDataString"/>/<see cref="Uri.EscapeDataString"/>, which is exact
+    /// for keys this API wrote but not for an oddly-escaped one placed by hand.
+    /// </summary>
+    private async Task<(string Key, DocumentDetail Detail)?> DescribeAsync(
+        string ownerId,
+        string documentId,
         CancellationToken cancellationToken)
     {
         var located = await LocateAsync(ownerId, documentId, cancellationToken);
@@ -175,13 +200,13 @@ public sealed class DocumentStore(IAmazonS3 s3, DocumentStorageOptions options)
             return null;
         }
 
-        return new DocumentDetail(
+        return (key, new DocumentDetail(
             documentId,
             filename,
             size,
             lastModified,
             NormalizeContentType(metadata.Headers.ContentType),
-            metadata.ETag);
+            metadata.ETag));
     }
 
     /// <summary>
@@ -194,13 +219,13 @@ public sealed class DocumentStore(IAmazonS3 s3, DocumentStorageOptions options)
         string documentId,
         CancellationToken cancellationToken)
     {
-        var detail = await FindAsync(ownerId, documentId, cancellationToken);
-        if (detail is null)
+        var described = await DescribeAsync(ownerId, documentId, cancellationToken);
+        if (described is null)
         {
             return null;
         }
 
-        var key = DocumentKey.Build(options.Prefix, ownerId, documentId, detail.Filename);
+        var (key, detail) = described.Value;
         var expiresAt = DateTimeOffset.UtcNow.Add(options.DownloadUrlLifetime);
 
         var url = await s3.GetPreSignedURLAsync(new GetPreSignedUrlRequest

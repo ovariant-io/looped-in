@@ -58,8 +58,7 @@
   background: color-mix(in srgb, #16a34a 10%, transparent);
 }
 
-.error,
-.warn {
+.error {
   border-color: color-mix(in srgb, #dc2626 40%, transparent);
   background: color-mix(in srgb, #dc2626 8%, transparent);
 }

@@ -55,5 +55,7 @@ def create_app(settings: Settings | None = None):
     # serverless / multi-instance deploy needs. `GET /mcp` is 405 by design.
     app = mcp.http_app(stateless_http=True, json_response=True)
     if settings.rewrite_public_url:
-        app = PublicUrlRewriteMiddleware(app, SENTINEL_ORIGIN)
+        app = PublicUrlRewriteMiddleware(
+            app, SENTINEL_ORIGIN, settings.allowed_public_hosts
+        )
     return app

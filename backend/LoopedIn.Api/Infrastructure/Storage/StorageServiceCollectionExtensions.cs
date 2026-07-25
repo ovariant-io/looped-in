@@ -60,6 +60,16 @@ public static class StorageServiceCollectionExtensions
 
         var options = new DocumentStorageOptions { Bucket = bucket, Prefix = prefix };
 
+        // Optional override; a missing, unparseable, or non-positive value keeps the default
+        // rather than silently signing unbounded uploads.
+        if (long.TryParse(
+                configuration[$"{DocumentStorageOptions.SectionName}:MaxUploadBytes"],
+                out var maxUploadBytes)
+            && maxUploadBytes > 0)
+        {
+            options = options with { MaxUploadBytes = maxUploadBytes };
+        }
+
         services.AddSingleton(options);
         services.AddSingleton(client);
         services.AddSingleton<DocumentStore>();

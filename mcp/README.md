@@ -97,7 +97,16 @@ SERVER_BASE_URL=https://<your-tunnel>.ngrok-free.app   # set after step 3
 `SERVER_BASE_URL` **must be the URL the client reaches the server at** — the
 OAuth Protected Resource Metadata is generated from it. For a tunneled local
 test, that's the tunnel URL (not `http://localhost`). Leave it unset and the
-server self-adapts to whatever host each request arrives on.
+server self-adapts to whatever host each request arrives on; a **blank** value
+(`SERVER_BASE_URL=`) counts as unset, so it and deleting the line are equivalent.
+
+When self-adapting, the host is taken from the request's `Host` header, so it is
+validated first: the scheme must be `http`/`https` and the host must match the
+RFC 3986 reg-name shape (letters, digits, dot, hyphen, optional `:port`). A
+request failing either is served with the sentinel origin left in place rather
+than reflecting an attacker-chosen host into the discovery documents. Set
+**`ALLOWED_PUBLIC_HOSTS`** (comma-separated) to narrow it to an explicit list
+once you know the hostname — worth doing behind a tunnel or a custom domain.
 
 Quick sanity checks (before involving Clerk or a real client):
 

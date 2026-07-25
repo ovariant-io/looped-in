@@ -3,6 +3,16 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Emit a self-contained server bundle (.next/standalone) for a slim Docker image
   output: "standalone",
+  turbopack: {
+    // Pin the workspace root to frontend/. Without this Next infers it by walking up for a
+    // lockfile and finds the repo root's (which belongs to the SST infra, not this app),
+    // warning that it "detected multiple lockfiles". That inference is what `output:
+    // "standalone"` traces against, so leaving it ambiguous risks the standalone bundle being
+    // assembled around the wrong tree. It only misfires on host builds — the Docker build
+    // context is ./frontend, so the container sees one lockfile — which is exactly the kind of
+    // difference worth removing rather than remembering.
+    root: __dirname,
+  },
   // Cache Components (PPR) is DISABLED for the AWS/SST deployment: OpenNext does not yet
   // support PPR resume (https://opennext.js.org), so it serves only the static shell and
   // never streams the dynamic <Suspense> continuation — the browser then throws

@@ -31,8 +31,16 @@ public sealed record DocumentListResponse(
     IReadOnlyList<DocumentSummary> Documents,
     bool Truncated);
 
-/// <summary>Body of <c>POST /documents</c> — the intent to upload, before any bytes exist.</summary>
-public sealed record CreateDocumentRequest(string? Filename, string? ContentType);
+/// <summary>
+/// Body of <c>POST /documents</c> — the intent to upload, before any bytes exist.
+/// <para>
+/// <paramref name="Size"/> is the byte length the client is about to PUT. It is required so
+/// the API can refuse an oversized upload before signing anything; see
+/// <see cref="Infrastructure.Storage.DocumentStorageOptions.MaxUploadBytes"/> for why that is
+/// an advisory check rather than an enforced one.
+/// </para>
+/// </summary>
+public sealed record CreateDocumentRequest(string? Filename, string? ContentType, long? Size);
 
 /// <summary>
 /// The presigned upload target. The client must PUT to <paramref name="UploadUrl"/> sending

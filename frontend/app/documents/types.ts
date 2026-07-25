@@ -2,7 +2,8 @@
  * Shapes returned by the .NET API's /documents endpoints.
  *
  * Kept in their own module — with no server-only imports — so the client component can import
- * them without pulling `@clerk/nextjs/server` into the browser bundle.
+ * them without pulling `@clerk/nextjs/server` into the browser bundle. (`ApiResult` lives with
+ * the call that produces it, in app/lib/backend.ts.)
  */
 
 /** A row in the document list. */
@@ -52,12 +53,3 @@ export type DocumentContent = {
   /** ISO 8601. */
   expiresAt: string;
 };
-
-/**
- * Result of a backend call. Server Actions return this rather than throwing, so the client can
- * render a specific message instead of tripping the error boundary — and so `status` survives
- * the server→client hop for cases the UI treats differently (503 = storage unconfigured).
- */
-export type ApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; status: number; error: string };

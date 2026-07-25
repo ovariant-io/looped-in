@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Amazon.Runtime;
+using LoopedIn.Api.Infrastructure.Diagnostics;
 using LoopedIn.Api.Infrastructure.Storage;
 using LoopedIn.Api.Models;
 
@@ -69,31 +70,39 @@ public static class DocumentEndpoints
     /// with the reason when storage is unconfigured or the bucket cannot be listed, so a
     /// misconfigured deployment is diagnosable without a valid session.
     /// </summary>
-    private static async Task<IResult> PingAsync(IServiceProvider services, CancellationToken cancellationToken)
-    {
-        var status = services.GetRequiredService<DocumentStorageStatus>();
-        if (!status.Configured)
+    /// <remarks>
+    /// The result is cached for a few seconds (<see cref="ProbeCache"/>): this endpoint issues a
+    /// real <c>ListObjectsV2</c>, and being public it would otherwise let an anonymous caller
+    /// drive billable S3 traffic at whatever rate the gateway throttle permits.
+    /// </remarks>
+    private static Task<IResult> PingAsync(IServiceProvider services, ProbeCache probes) =>
+        probes.GetOrProbeAsync("documents", async () =>
         {
-            return Results.Problem(
-                status.Reason ?? "Document storage is not configured.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-
-        try
-        {
-            await services.GetRequiredService<DocumentStore>().CheckAsync(cancellationToken);
-            return Results.Ok(new
+            var status = services.GetRequiredService<DocumentStorageStatus>();
+            if (!status.Configured)
             {
-                configured = true,
-                bucket = status.Bucket,
-                prefix = status.Prefix,
-            });
-        }
-        catch (Exception ex)
-        {
-            return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
-    }
+                return Results.Problem(
+                    status.Reason ?? "Document storage is not configured.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+
+            try
+            {
+                // Not the request's token: this probe is shared by every caller inside the TTL,
+                // so one disconnecting client must not cancel it for the others.
+                await services.GetRequiredService<DocumentStore>().CheckAsync(CancellationToken.None);
+                return Results.Ok(new
+                {
+                    configured = true,
+                    bucket = status.Bucket,
+                    prefix = status.Prefix,
+                });
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status503ServiceUnavailable);
+            }
+        });
 
     private static Task<IResult> ListAsync(
         IServiceProvider services,
@@ -118,8 +127,27 @@ public static class DocumentEndpoints
                 return Results.Problem(error, statusCode: StatusCodes.Status400BadRequest);
             }
 
+            // The declared size is required so an oversized upload is refused before anything
+            // is signed. Note what this is and isn't: it stops an honest client from starting
+            // a doomed transfer and gives the UI a limit to state, but S3 cannot enforce a
+            // length on a query-signed PUT, so a hostile client can still understate its size.
+            // DocumentStorageOptions.MaxUploadBytes documents the trade and the real fix.
+            if (request?.Size is not { } size || size < 0)
+            {
+                return Results.Problem(
+                    "A non-negative size (in bytes) is required so the upload can be checked against the limit.",
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (size > store.MaxUploadBytes)
+            {
+                return Results.Problem(
+                    $"That file is {size:N0} bytes, over the {store.MaxUploadBytes:N0}-byte upload limit.",
+                    statusCode: StatusCodes.Status413PayloadTooLarge);
+            }
+
             var target = await store.CreateUploadTargetAsync(
-                ownerId, filename, request?.ContentType, cancellationToken);
+                ownerId, filename, request.ContentType, cancellationToken);
 
             return Results.Ok(target);
         });

@@ -1,13 +1,8 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { callBackend } from "./api";
-import type {
-  ApiResult,
-  DocumentContent,
-  DocumentDetail,
-  UploadTarget,
-} from "./types";
+import { callBackend, type ApiResult } from "../lib/backend";
+import type { DocumentContent, DocumentDetail, UploadTarget } from "./types";
 
 /**
  * Server Actions backing the documents UI.
@@ -27,14 +22,20 @@ import type {
 /**
  * Step 1 of an upload: reserve an id and get a presigned PUT. Nothing exists in S3 until the
  * browser completes that PUT, so abandoning here leaves no debris.
+ *
+ * `size` is the byte length about to be sent. The API requires it so it can refuse an
+ * oversized upload before signing anything — the check is advisory (S3 cannot enforce a length
+ * on a query-signed PUT), but it turns "the file silently uploads and bills you" into a clear
+ * 413 the UI can show before any bytes move.
  */
 export async function createUploadTarget(
   filename: string,
   contentType: string,
+  size: number,
 ): Promise<ApiResult<UploadTarget>> {
   return callBackend<UploadTarget>("/documents", {
     method: "POST",
-    body: { filename, contentType },
+    body: { filename, contentType, size },
   });
 }
 

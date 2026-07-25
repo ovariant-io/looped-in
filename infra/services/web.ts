@@ -19,9 +19,13 @@ export function createWebService(options: WebServiceOptions) {
       BACKEND_URL: options.apiBaseUrl,
       NEXT_PUBLIC_API_URL: options.apiBaseUrl,
       // The connector URL the /connect page tells people to paste into their MCP client.
-      // Deliberately NOT NEXT_PUBLIC_: those are inlined into the bundle at build time,
-      // while this value only exists once the MCP gateway is created. The page reads it
-      // server-side during dynamic rendering instead, so it resolves per request.
+      // Deliberately NOT NEXT_PUBLIC_, but not for the reason you might expect: SST resolves
+      // Outputs in this map by building with a placeholder and substituting it in the output
+      // assets, so a NEXT_PUBLIC_ value that only exists after the gateway (NEXT_PUBLIC_API_URL
+      // right above is exactly that) does work. The reason is scope: only `/connect` needs this
+      // URL and it reads it server-side, so there is no cause to inline it into every client
+      // bundle. `await connection()` in app/connect/page.tsx is what makes it resolve per
+      // request rather than at build time.
       MCP_URL: options.mcpConnectorUrl,
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: options.secrets.clerkPublishableKey.value,
       CLERK_SECRET_KEY: options.secrets.clerkSecretKey.value,

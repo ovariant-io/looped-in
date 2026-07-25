@@ -100,6 +100,13 @@
   opacity: 0.85;
 }
 
+.copyError {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
 .unset {
   margin: 0;
   padding: 12px;

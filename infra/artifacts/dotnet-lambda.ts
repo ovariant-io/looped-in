@@ -1,4 +1,5 @@
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { existsSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 
 export interface DotnetLambdaArtifacts {
@@ -17,12 +18,37 @@ export function buildDotnetLambdaArtifacts(repoRoot: string): DotnetLambdaArtifa
   const project = path.join(repoRoot, "backend/LoopedIn.Api/LoopedIn.Api.csproj");
   const apiDir = path.join(repoRoot, "backend/LoopedIn.Api/.lambda-publish");
 
-  execSync(
-    `dotnet publish "${project}" ` +
-      "-c Release -r linux-arm64 --no-self-contained " +
-      `-o "${apiDir}"`,
+  // Rebuild from scratch: `dotnet publish -o` overwrites the files it produces but never
+  // prunes ones it doesn't, so a DLL from a since-removed PackageReference would survive here
+  // and ship in every subsequent zip — silently, and long after the change that orphaned it.
+  // Same hazard and same fix as artifacts/python-lambda.ts.
+  rmSync(apiDir, { recursive: true, force: true });
+
+  // execFileSync, not execSync: the arguments are passed to the process directly rather than
+  // through a shell, so a repo path containing a space or a quote can't reshape the command.
+  execFileSync(
+    "dotnet",
+    [
+      "publish",
+      project,
+      "-c",
+      "Release",
+      "-r",
+      "linux-arm64",
+      "--no-self-contained",
+      "-o",
+      apiDir,
+    ],
     { stdio: "inherit" },
   );
+
+  // Cheap guard against a silently empty/partial artifact — a Lambda that unzips without its
+  // entry assembly fails at invoke time, long after the deploy reports success. Mirrors the
+  // equivalent check in artifacts/python-lambda.ts.
+  const entryAssembly = path.join(apiDir, "LoopedIn.Api.dll");
+  if (!existsSync(entryAssembly) || statSync(entryAssembly).size === 0) {
+    throw new Error(`API Lambda artifact is missing LoopedIn.Api.dll (looked in ${apiDir})`);
+  }
 
   return Object.freeze({ apiDir });
 }

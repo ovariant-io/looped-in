@@ -62,7 +62,7 @@ missing file/key) before touching AWS if a required secret is absent.
 | --- | --- | --- | --- |
 | `DatabaseUrl` | `backend/.env.<env>` | `DATABASE_URL` | ✅ |
 | `ClerkAuthority` | `backend/.env.<env>` | `Clerk__Authority` | ✅ |
-| `ClerkAuthorizedParties` | `backend/.env.<env>` | `Clerk__AuthorizedParties` | optional |
+| `ClerkAuthorizedParties` | `backend/.env.<env>` | `Clerk__AuthorizedParties` | optional — **set it anyway** (below) |
 | `ClerkPublishableKey` | `frontend/.env.<env>` | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | ✅ |
 | `ClerkSecretKey` | `frontend/.env.<env>` | `CLERK_SECRET_KEY` | ✅ |
 
@@ -72,6 +72,13 @@ handles cannot drift. All `.env.<env>` files are gitignored (only `*.example` te
 committed). The stable Clerk route URLs (`/sign-in`, `/sign-up`) are set in
 `infra/services/web.ts`, not as secrets.
 
+**`ClerkAuthorizedParties` is optional to the deploy but not to the security model.** Clerk
+session tokens carry no fixed `aud`, so the API runs with audience validation off; with this
+list empty it accepts **every** token the Clerk instance issued — including one minted for a
+third-party OAuth client that self-registered through DCR and got a user to click Allow. Set it
+to the origins allowed to call the API. `GET /auth/ping` echoes `authorizedParties` and warns
+when it is empty, so it is checkable after any deploy.
+
 **The MCP server adds no secret.** It reuses `ClerkAuthority` as its `CLERK_ISSUER`, and DCR
 means there is no OAuth client secret to store. `mcp/.env.local` is for local dev only.
 
@@ -79,6 +86,12 @@ means there is no OAuth client secret to store. `mcp/.env.local` is for local de
 `Documents__Bucket` / `Documents__Prefix` are passed to the API Lambda as plain environment
 variables wired directly from the bucket resource (`infra/services/api.ts`). AWS credentials come
 from the function's execution role, so there are no AWS keys anywhere in this stack's config.
+
+**Upload size is bounded advisorily, not enforced.** `POST /documents` refuses a declared size
+over `Documents__MaxUploadBytes` (default 100 MiB) with 413 before signing anything, but S3
+cannot enforce a length on a query-signed PUT — a client that understates its size can still
+write up to S3's 5 GB single-object limit. The budget alarm is the backstop; a presigned POST
+policy with `content-length-range` is the real fix if that ever matters.
 
 ## Documents and S3
 
@@ -169,4 +182,7 @@ npx sst remove --stage prod      # prod resources are retained by config; remove
 - **Local dev is unchanged** — keep using `docker compose up` / `dotnet run` / `npm run dev`.
   The MCP server is opt-in there: `docker compose --profile mcp up` (or a venv — see
   `mcp/README.md`), since it needs `CLERK_ISSUER` to start at all.
-- **Cost alarm:** edit `ALERT_EMAIL` / `MONTHLY_BUDGET_USD` in `infra/config/stages.ts`.
+- **Cost alarm:** edit `MONTHLY_BUDGET_USD` in `infra/config/stages.ts`. For the recipient, set
+  **`LOOPED_IN_ALERT_EMAIL`** in the deploy environment rather than editing the file — the
+  fallback there is the original author's personal address, and a fork that leaves it sends
+  them the cost alarms for your account.

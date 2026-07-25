@@ -112,6 +112,24 @@ function sst(args) {
   execFileSync("npx", ["sst", ...args], { stdio: "inherit", cwd: repoRoot });
 }
 
+/**
+ * Renders one `KEY=value` line for the temp dotenv `sst secret load` reads.
+ *
+ * Always double-quoted, with `\`, `"`, and newlines escaped. parseDotenv above strips
+ * surrounding quotes on the way in, so writing the value back bare would corrupt anything
+ * containing a space, a `#`, or a quote — and connection strings and Clerk keys are exactly
+ * the kind of value that carries those. A secret mangled here fails at runtime, in the
+ * deployed stage, as an authentication error that points nowhere near this line.
+ */
+function toDotenvLine(key, value) {
+  const escaped = String(value)
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("\r", "\\r")
+    .replaceAll("\n", "\\n");
+  return `${key}="${escaped}"`;
+}
+
 // Load secrets in one call via a short-lived temp dotenv (mode 0600), then shred it.
 console.log(`→ Loading ${resolved.length} secret(s) into SST stage "${env}"…`);
 const dir = mkdtempSync(join(tmpdir(), "looped-in-secrets-"));
@@ -120,7 +138,7 @@ let status = 0;
 try {
   writeFileSync(
     secretFile,
-    resolved.map(([k, v]) => `${k}=${v}`).join("\n") + "\n",
+    resolved.map(([k, v]) => toDotenvLine(k, v)).join("\n") + "\n",
     { mode: 0o600 },
   );
   sst(["secret", "load", secretFile, "--stage", env]);

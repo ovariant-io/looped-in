@@ -49,6 +49,10 @@ class Settings:
     # middleware rewrites per request. `rewrite_public_url` is True in the latter case.
     server_base_url: str
     rewrite_public_url: bool
+    # When non-empty, the only Host values the middleware will rewrite the public URL
+    # to. Empty (the default) accepts any syntactically valid host — required in the
+    # cloud, where the gateway domain is not knowable at deploy time.
+    allowed_public_hosts: frozenset[str]
     host: str
     port: int
 
@@ -62,13 +66,24 @@ class Settings:
                 "local dev; infra/services/mcp.ts injects it from the ClerkAuthority "
                 "secret in the cloud."
             )
-        explicit_base = os.environ.get("SERVER_BASE_URL")
+        # A BLANK value must mean "unset", not "pin the empty string". Reading this as
+        # `is None` would leave server_base_url on the unresolvable sentinel AND switch
+        # the rewrite off, so every client's OAuth discovery would point at a host that
+        # can never resolve — a silent handshake failure. Blanking the line is exactly
+        # how a person "unsets" a dotenv key, and .env.example ships it set, so this is
+        # the likely mistake, not an exotic one.
+        explicit_base = (os.environ.get("SERVER_BASE_URL") or "").strip() or None
         return cls(
             clerk_issuer=issuer.rstrip("/"),
             clerk_audience=os.environ.get("CLERK_AUDIENCE") or None,
             backend_url=(os.environ.get("BACKEND_URL") or "").rstrip("/") or None,
             server_base_url=(explicit_base or SENTINEL_ORIGIN).rstrip("/"),
             rewrite_public_url=explicit_base is None,
+            allowed_public_hosts=frozenset(
+                host.strip().lower()
+                for host in (os.environ.get("ALLOWED_PUBLIC_HOSTS") or "").split(",")
+                if host.strip()
+            ),
             host=os.environ.get("HOST", "0.0.0.0"),
             port=int(os.environ.get("PORT", "8000")),
         )

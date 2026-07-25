@@ -49,7 +49,9 @@ public static class DocumentKey
     /// <summary>
     /// True when the owner id is safe to embed in a key. Clerk subjects look like
     /// <c>user_2abc…</c>; anything outside that shape is rejected rather than escaped, because a
-    /// surprising subject means something upstream is wrong and a 500 is the honest answer.
+    /// surprising subject means something upstream is wrong. Callers refuse the request (see
+    /// <c>DocumentEndpoints.WithStoreAsync</c>, which answers 401) rather than invent a prefix —
+    /// guessing at the owner segment would be a tenancy bug.
     /// </summary>
     public static bool IsValidOwnerId(string? ownerId) =>
         !string.IsNullOrEmpty(ownerId)

@@ -19,8 +19,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Hello World",
-  description: "A Next.js hello world app",
+  // Pages that set their own title (/me, /connect, /documents) override this; it is the
+  // fallback for anything that doesn't, and the tab title on the home page.
+  title: "Looped In",
+  description:
+    "Looped In — your documents and your AI assistants, on one authenticated account.",
 };
 
 // Server slot: resolve the real auth state for THIS request and seed the client

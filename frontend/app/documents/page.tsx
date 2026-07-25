@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { callBackend } from "./api";
+import { callBackend } from "../lib/backend";
 import { DocumentManager } from "./document-manager";
 import type { DocumentListResponse } from "./types";
 import styles from "./documents.module.css";

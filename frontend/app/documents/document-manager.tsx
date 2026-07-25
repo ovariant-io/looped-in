@@ -52,8 +52,9 @@ export function DocumentManager({
             : `Uploading ${file.name}…`,
         );
 
-        // 1. Reserve an id and get a presigned PUT. Nothing exists in S3 yet.
-        const target = await createUploadTarget(file.name, file.type);
+        // 1. Reserve an id and get a presigned PUT. Nothing exists in S3 yet. The declared
+        //    size lets the API reject an over-limit file here, before any bytes move.
+        const target = await createUploadTarget(file.name, file.type, file.size);
         if (!target.ok) {
           setError(target.error);
           setStatus(null);

@@ -1,5 +1,9 @@
-// Where AWS Budgets cost alerts are emailed. Change before sharing this repo.
-export const ALERT_EMAIL = "prabath.udakandage@gmail.com";
+// Where AWS Budgets cost alerts are emailed. Set LOOPED_IN_ALERT_EMAIL to override without
+// editing this file — which is what a fork or a second operator should do, since the fallback
+// below is one person's personal address and a deploy that silently keeps it sends THEM the
+// cost alarms for YOUR account.
+export const ALERT_EMAIL =
+  process.env.LOOPED_IN_ALERT_EMAIL?.trim() || "prabath.udakandage@gmail.com";
 // Monthly spend ceiling for the alarm (USD). Cheap by design — this stack scales to
 // zero, so anything climbing toward this number means something is misconfigured.
 export const MONTHLY_BUDGET_USD = "10";

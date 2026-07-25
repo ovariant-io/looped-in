@@ -33,6 +33,22 @@ public sealed record DocumentStorageOptions
     /// flagged truncated (see <see cref="DocumentStore.ListAsync"/> for what that costs).
     /// </summary>
     public int MaxListedObjects { get; init; } = 1000;
+
+    /// <summary>
+    /// Largest upload this API will sign, in bytes. From <c>Documents:MaxUploadBytes</c>,
+    /// default 100 MiB.
+    /// <para>
+    /// <b>This is an advisory bound, not an enforced one.</b> A client declares its size when
+    /// asking for an upload target and is refused here if it is over the limit — which stops
+    /// an honest oversized upload and gives the UI a message to show. It does <em>not</em>
+    /// stop a hostile client from declaring a small size and then PUTting up to S3's 5 GB
+    /// single-object limit, because a SigV4 <em>query-signed</em> URL has nowhere to carry a
+    /// length constraint. Real enforcement means switching the upload path to a presigned
+    /// POST policy, whose <c>content-length-range</c> condition S3 checks itself; that is a
+    /// larger change to both halves of the upload and is deliberately not made here.
+    /// </para>
+    /// </summary>
+    public long MaxUploadBytes { get; init; } = 100L * 1024 * 1024;
 }
 
 /// <summary>
