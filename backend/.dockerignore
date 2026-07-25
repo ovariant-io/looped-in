@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+.vs/
+*.user
+.env.local
+.env.*.local
+Dockerfile
+.dockerignore

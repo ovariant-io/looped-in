@@ -1,0 +1,182 @@
+.main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.intro {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+  line-height: 1.6;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.muted {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 0.9rem;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.intro code,
+.card code,
+.troubleshooting code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ---- connector link ---- */
+
+.copyField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 8px 8px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 15%, transparent);
+  background: var(--background);
+}
+
+.copyValue {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.8rem;
+  background: none;
+  padding: 0;
+}
+
+.copyButton {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: var(--foreground);
+  color: var(--background);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.copyButton:hover {
+  opacity: 0.85;
+}
+
+.copyError {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.unset {
+  margin: 0;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 20%, transparent);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+/* ---- steps ---- */
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  line-height: 1.6;
+}
+
+.steps li::marker {
+  color: color-mix(in srgb, var(--foreground) 45%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- tools ---- */
+
+.tools {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tool dt {
+  margin-bottom: 4px;
+}
+
+.tool dd {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+.ask {
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-style: italic;
+}
+
+/* ---- troubleshooting ---- */
+
+.troubleshooting {
+  padding: 4px 0;
+}
+
+.troubleshooting summary {
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.troubleshooting ul {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}

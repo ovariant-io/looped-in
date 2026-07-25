@@ -1,0 +1,73 @@
+name: looped-in
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: looped-in-backend
+    ports:
+      - "5114:8080" # host:container
+    env_file:
+      # DATABASE_URL (Neon), Clerk__Authority, and the document-storage settings
+      # (Documents__Bucket + AWS_REGION and credentials). Gitignored; see .env.local.example.
+      - path: ./backend/.env.local
+        required: false
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+    # The container cannot see the host's ~/.aws, so S3 credentials have to arrive some other
+    # way. Putting AWS_REGION + AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in backend/.env.local is
+    # the simplest. To use a host profile instead, uncomment this — the runtime image runs as the
+    # `app` user, whose home is /home/app — and set AWS_PROFILE in .env.local:
+    # volumes:
+    #   - ~/.aws:/home/app/.aws:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: looped-in-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: ./frontend/.env.local # Clerk keys (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY + secret); gitignored
+        required: false
+    environment:
+      NODE_ENV: production
+      # URL the browser uses to reach the API (host port)
+      NEXT_PUBLIC_API_URL: http://localhost:5114
+      # URL the frontend container uses for server-side calls (compose network)
+      BACKEND_URL: http://backend:8080
+      # Connector URL shown on /connect. Read server-side at request time, so a plain
+      # runtime env var is enough (no rebuild needed). Point it at your tunnel URL when
+      # testing a real MCP client, which needs HTTPS: MCP_URL=https://<tunnel>/mcp
+      MCP_URL: http://localhost:8000/mcp
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  # Opt-in: `docker compose up` still starts only frontend + backend; add --profile mcp to
+  # include this one. It is gated because the server has no unconfigured mode — it exits at
+  # startup without CLERK_ISSUER, which would turn a normal `up` into a crash loop for anyone
+  # who hasn't created mcp/.env.local yet.
+  mcp:
+    build:
+      context: ./mcp
+    image: looped-in-mcp
+    profiles: ["mcp"]
+    ports:
+      - "8000:8000"
+    env_file:
+      - path: ./mcp/.env.local # CLERK_ISSUER (+ SERVER_BASE_URL for a tunnel); gitignored
+        required: false
+    environment:
+      # Compose-network address of the API, overriding whatever .env.local says (values in
+      # `environment` win over `env_file`) — inside the network the host port doesn't exist.
+      BACKEND_URL: http://backend:8080
+      # SERVER_BASE_URL is intentionally absent here: set it in mcp/.env.local to your
+      # ngrok/cloudflared HTTPS URL when connecting a real MCP client, since the OAuth
+      # protected-resource metadata is generated from it. Left unset, the server self-adapts
+      # to whatever host it is reached at.
+    depends_on:
+      - backend
+    restart: unless-stopped

@@ -1,0 +1,17 @@
+# SST (generated platform + state)
+.sst/
+
+# Root infra node_modules (sst lives here; the apps have their own)
+/node_modules/
+
+# .NET Lambda publish artifact produced during `sst deploy`
+backend/LoopedIn.Api/.lambda-publish/
+
+# OpenNext build output (regenerated every deploy)
+.open-next/
+
+# SST-generated resource types
+sst-env.d.ts
+
+# Local environment overrides
+.env

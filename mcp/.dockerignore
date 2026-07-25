@@ -1,0 +1,10 @@
+# Keep the build context small and free of local/secret state.
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+.lambda-publish/
+.env
+.env.*
+!.env.example
+README.md

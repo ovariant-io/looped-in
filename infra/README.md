@@ -1,0 +1,124 @@
+# Looped In infrastructure modules
+
+`sst.config.ts` is the thin SST entry point (SST forbids top-level imports there, so it
+dynamically imports these modules inside `app()`/`run()`). `infra/index.ts` composes the
+deployed graph in dependency order; plain functions are used deliberately so moving
+declarations between modules does not introduce Pulumi component parents or change
+resource URNs — a rename in `names.ts` is a destroy/recreate.
+
+## Topology
+
+```
+MCP client (Claude Desktop, …)
+        │  Bearer token, OAuth/DCR against Clerk
+  API Gateway HTTP API #2 ($default stage)
+        │  throttled, access-logged, wildcard CORS
+  Python 3.13 MCP Lambda (arm64, Mangum)
+        │  forwards the caller's token
+        ▼
+CloudFront + S3 (OpenNext)     API Gateway HTTP API #1 ($default stage)
+        │                                │  throttled, access-logged
+   Next.js server Lambda ────────────────┘
+                                         │  AWS_PROXY, payload format 2.0
+                                  .NET 10 API Lambda (arm64, dotnet10)
+                                         │  public internet, TLS
+                                   Neon Postgres · Clerk JWKS
+
+S3 documents bucket (private) ← presigned PUT/GET straight from the browser
+        ▲                        scoped grant: documents/* only
+        └──────────────────────── API Lambda mints the presigned URLs
+```
+
+Neither Lambda has a **Function URL** — API Gateway is the only invoke path for each, granted
+by a single `lambda:Permission` scoped to that API's execution ARN. The MCP server gets its
+own gateway rather than routes on the API's: its OAuth discovery path
+(`/.well-known/oauth-protected-resource/mcp`) would collide with the API's `$default`
+catch-all, and a separate origin keeps the connector URL, throttle, and access log independent.
+
+The web service depends on the MCP gateway (it renders the connector URL at `/connect`) and the
+MCP service depends on the API gateway (it forwards tokens there) — hence the order in
+`index.ts`. No cycle: the MCP server never calls the web app.
+
+The storage bucket (`storage/bucket.ts`) backs `/documents`. It is created **before** the API,
+which receives `bucket.name` as `Documents__Bucket`; the API's role gets named actions on the
+`documents/*` prefix only (`grantDocumentsAccess` in `shared/iam.ts`). Declaration order in
+`index.ts` is presentational — Pulumi derives URNs from `names.ts`, so moving the call changed no
+resource identity.
+
+Uploads and downloads never traverse the API: it presigns a URL and the browser talks to S3
+directly. That is why the bucket carries a CORS config (a browser PUT to S3 is cross-origin) and
+why the scoped IAM grant still matters — S3 evaluates the **signing role's** permissions when a
+presigned URL is redeemed, so `documents/*` bounds direct browser access too.
+
+## Ownership
+
+| Area | Owner |
+| --- | --- |
+| App/stage policy (removal, protect, region) | `app.ts`, `config/stages.ts` |
+| Per-stage settings, budget constants, prod CORS guard | `config/stages.ts` |
+| SST secret names + dotenv sources (shared with `scripts/deploy.mjs`) | `config/secrets.json`, `config/secrets.ts` |
+| `dotnet publish` of the API Lambda artifact | `artifacts/dotnet-lambda.ts` |
+| `pip install` of the MCP Lambda artifact (hash-locked, cross-platform) | `artifacts/python-lambda.ts` |
+| API Lambda (env, memory, timeout) | `services/api.ts` |
+| API Gateway HTTP API edge (route, throttle, CORS, access logs) | `services/gateway.ts` |
+| MCP Lambda (Clerk issuer, backend URL) | `services/mcp.ts` |
+| MCP HTTP API edge (route, throttle, MCP-specific CORS, access logs) | `services/mcp-gateway.ts` |
+| Next.js (OpenNext) frontend | `services/web.ts` |
+| Documents S3 bucket (private, browser-upload CORS) + the shared `DOCUMENTS_PREFIX` | `storage/bucket.ts` |
+| Budget alarm | `operations/budget.ts` |
+| IAM primitives (execution roles, the scoped documents grant) | `shared/iam.ts` |
+| Invariant pieces shared by both HTTP API edges (access-log format, URL tidy) | `shared/http-api.ts` |
+| Frozen logical names + output contract | `names.ts` |
+| Stable output assembly | `index.ts` |
+
+## Extension recipes
+
+### Add a secret
+
+1. Add one entry to `config/secrets.json` (SST name + which app's `.env.<stage>` file and
+   key it loads from). `scripts/deploy.mjs` reads the same manifest. `required: false`
+   entries get an empty-string default so an unset stage still deploys.
+2. Add the typed handle in `config/secrets.ts` and pass it only to explicit consumers.
+3. Update the secret table in `DEPLOY.md`.
+
+### Add a stage setting
+
+1. Add the field to `StageConfig`/`STAGE_CONFIG` in `config/stages.ts`.
+2. Pass it only to the modules that consume it via `StageSettings`.
+
+### Add a resource
+
+1. Add its logical name to `names.ts` (never rename existing entries).
+2. Put it in the domain module it belongs to (`services/`, `operations/`, …), or create a
+   new focused module.
+3. Wire only its real dependencies and consumers in `index.ts`.
+4. Add a public output only when operators need one; never rename an existing output key
+   (`web`, `api` are a compatibility contract — see `OUTPUT_KEYS`).
+
+### Add an MCP tool
+
+Nothing in `infra/` changes. Tools live in `mcp/looped_in_mcp/tools/` (new module +
+one line in `registry.py`); the deploy repackages the Lambda on its own. Only a new
+*dependency* touches infra indirectly — regenerate `mcp/requirements-lambda.lock`
+(command at the top of `mcp/requirements.txt`) or the hash-checked install fails.
+
+### Throttle a specific route harder
+
+`services/gateway.ts` registers a single `$default` route because ASP.NET owns routing. To
+throttle one path (e.g. an anonymous write), add an explicit `aws.apigatewayv2.Route` with
+that route key plus a matching entry in the stage's `routeSettings`, and add both logical
+names to `names.ts`. Note AWS rejects route keys with an empty path segment, so a
+trailing-slash variant cannot be registered — it falls through to `$default`.
+
+## Change checklist
+
+- `npm run infra:check` — TypeScript-validates this directory + the entry point (no AWS
+  access; needs `.sst/platform/` types, which any prior `sst` command installs).
+- `node scripts/deploy.mjs test --dry-run` — validates the secret manifest against the
+  local dotenv files without touching AWS.
+- `npm run diff -- --stage test` — preview against real state; investigate every proposed
+  replacement or IAM change. Zero changes expected from a pure refactor.
+- Preserve logical names and never add a component parent unless a deliberate state
+  migration is planned.
+- Update `DEPLOY.md` when topology, trust boundaries, or the output contract change.
+- Use the `deploy` skill for any real test/prod deployment.

@@ -1,0 +1,26 @@
+@LoopedIn.Api_HostAddress = http://localhost:5114
+
+# The public endpoints. Each *_ping reports 200 when its dependency is configured and 503 with
+# the reason when it is not, so this file doubles as a configuration checklist.
+# Protected routes (/me, /documents/*) need a real Clerk bearer token and are easier to exercise
+# through the web UI at /me and /documents.
+
+GET {{LoopedIn.Api_HostAddress}}/
+Accept: text/plain
+
+###
+
+GET {{LoopedIn.Api_HostAddress}}/db/ping
+Accept: application/json
+
+###
+
+GET {{LoopedIn.Api_HostAddress}}/auth/ping
+Accept: application/json
+
+###
+
+GET {{LoopedIn.Api_HostAddress}}/documents/ping
+Accept: application/json
+
+###

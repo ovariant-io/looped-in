@@ -1,0 +1,121 @@
+.main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.intro {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+  line-height: 1.6;
+}
+
+.intro code,
+.card code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.muted {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.ok {
+  border-color: color-mix(in srgb, #16a34a 45%, transparent);
+  background: color-mix(in srgb, #16a34a 10%, transparent);
+}
+
+.error {
+  border-color: color-mix(in srgb, #dc2626 40%, transparent);
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.identity {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+}
+
+.row dt {
+  flex: 0 0 72px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.row dd {
+  margin: 0;
+  word-break: break-all;
+}
+
+.claims {
+  margin: 8px 0 0;
+}
+
+.claims summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+}
+
+.claims pre {
+  margin: 8px 0 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  line-height: 1.5;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
