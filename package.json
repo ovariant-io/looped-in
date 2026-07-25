@@ -1,0 +1,20 @@
+{
+  "name": "looped-in",
+  "private": true,
+  "type": "module",
+  "description": "SST (AWS) infrastructure for the Looped In stack",
+  "scripts": {
+    "sst": "sst",
+    "deploy": "node scripts/deploy.mjs",
+    "deploy:local": "node scripts/deploy.mjs local",
+    "deploy:test": "node scripts/deploy.mjs test",
+    "deploy:prod": "node scripts/deploy.mjs prod",
+    "diff": "sst diff",
+    "remove": "sst remove",
+    "console": "sst console",
+    "secrets": "sst secret list"
+  },
+  "devDependencies": {
+    "sst": "^4"
+  }
+}

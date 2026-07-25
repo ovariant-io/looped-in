@@ -1,0 +1,35 @@
+name: looped-in
+
+services:
+  backend:
+    build:
+      context: ./backend
+    image: looped-in-backend
+    ports:
+      - "5114:8080" # host:container
+    env_file:
+      - path: ./backend/.env.local # holds DATABASE_URL (Neon); gitignored
+        required: false
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_HTTP_PORTS: "8080"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    image: looped-in-frontend
+    ports:
+      - "3000:3000"
+    env_file:
+      - path: ./frontend/.env.local # Clerk keys (NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY + secret); gitignored
+        required: false
+    environment:
+      NODE_ENV: production
+      # URL the browser uses to reach the API (host port)
+      NEXT_PUBLIC_API_URL: http://localhost:5114
+      # URL the frontend container uses for server-side calls (compose network)
+      BACKEND_URL: http://backend:8080
+    depends_on:
+      - backend
+    restart: unless-stopped

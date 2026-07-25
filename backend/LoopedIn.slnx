@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/build/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+  </Folder>
+  <Project Path="LoopedIn.Api/LoopedIn.Api.csproj" />
+</Solution>

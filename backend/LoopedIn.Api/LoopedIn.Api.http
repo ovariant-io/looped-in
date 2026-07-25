@@ -1,0 +1,6 @@
+@LoopedIn.Api_HostAddress = http://localhost:5114
+
+GET {{LoopedIn.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

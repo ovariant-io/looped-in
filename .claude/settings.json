@@ -1,0 +1,39 @@
+{
+  "enabledPlugins": {
+    "dotnet-skills@dotnet-skills": true
+  },
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npm run lint)",
+      "Bash(npm run lint *)",
+      "Bash(npm run build)",
+      "Bash(npm run build *)",
+      "Bash(npm run dev)",
+      "Bash(npm run dev *)",
+      "Bash(npm run start)",
+      "Bash(npm run start *)",
+      "Bash(npm ci)",
+      "Bash(npm install)",
+      "Bash(npm install *)",
+      "Bash(dotnet *)",
+      "Bash(docker compose *)",
+      "Bash(docker ps *)",
+      "Bash(docker logs *)",
+      "Bash(curl http://localhost:*)",
+      "Bash(curl http://127.0.0.1:*)"
+    ],
+    "deny": [
+      "Bash(npm run deploy*)",
+      "Bash(npm run remove*)",
+      "Bash(npm run sst*)",
+      "Bash(sst deploy*)",
+      "Bash(sst remove*)",
+      "Bash(npx sst deploy*)",
+      "Bash(npx sst remove*)",
+      "Bash(node scripts/deploy.mjs*)"
+    ]
+  }
+}

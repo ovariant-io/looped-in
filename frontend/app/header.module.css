@@ -1,0 +1,81 @@
+.header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(8px);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.brand {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.5px;
+  color: var(--foreground);
+}
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.button {
+  appearance: none;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--foreground) 22%, transparent);
+  color: var(--foreground);
+}
+
+.ghost:hover {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+
+.primary {
+  background: var(--foreground);
+  border: 1px solid var(--foreground);
+  color: var(--background);
+}
+
+.primary:hover {
+  opacity: 0.85;
+}
+
+.navLink {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  transition: color 0.15s ease;
+}
+
+.navLink:hover {
+  color: var(--foreground);
+}
+
+/* Reserves the auth-controls space while the dynamic state streams in. */
+.placeholder {
+  width: 132px;
+  height: 32px;
+}
