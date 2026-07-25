@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.pyc
+
+# Lambda build artifact: the deploy runs `pip install --target .lambda-publish`
+# then FileArchives it (see infra/artifacts/python-lambda.ts). Regenerated every
+# deploy.
+.lambda-publish/
+
+# dotenv files: keep only the example template, ignore every real env file
+# (.env, .env.local, .env.test, .env.prod, …) so no secrets are committed.
+.env*
+!.env.example

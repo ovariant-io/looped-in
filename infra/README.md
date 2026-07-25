@@ -9,7 +9,14 @@ resource URNs — a rename in `names.ts` is a destroy/recreate.
 ## Topology
 
 ```
-CloudFront + S3 (OpenNext)     API Gateway HTTP API ($default stage)
+MCP client (Claude Desktop, …)
+        │  Bearer token, OAuth/DCR against Clerk
+  API Gateway HTTP API #2 ($default stage)
+        │  throttled, access-logged, wildcard CORS
+  Python 3.13 MCP Lambda (arm64, Mangum)
+        │  forwards the caller's token
+        ▼
+CloudFront + S3 (OpenNext)     API Gateway HTTP API #1 ($default stage)
         │                                │  throttled, access-logged
    Next.js server Lambda ────────────────┘
                                          │  AWS_PROXY, payload format 2.0
@@ -20,8 +27,15 @@ CloudFront + S3 (OpenNext)     API Gateway HTTP API ($default stage)
 S3 storage bucket (private)  ← standalone: no consumer, no IAM grant, no env var yet
 ```
 
-The API Lambda has **no Function URL** — API Gateway is its only invoke path, granted by a
-single `lambda:Permission` scoped to this API's execution ARN.
+Neither Lambda has a **Function URL** — API Gateway is the only invoke path for each, granted
+by a single `lambda:Permission` scoped to that API's execution ARN. The MCP server gets its
+own gateway rather than routes on the API's: its OAuth discovery path
+(`/.well-known/oauth-protected-resource/mcp`) would collide with the API's `$default`
+catch-all, and a separate origin keeps the connector URL, throttle, and access log independent.
+
+The web service depends on the MCP gateway (it renders the connector URL at `/connect`) and the
+MCP service depends on the API gateway (it forwards tokens there) — hence the order in
+`index.ts`. No cycle: the MCP server never calls the web app.
 
 The storage bucket (`storage/bucket.ts`) is deliberately disconnected from that graph:
 nothing in either app can reach it until someone grants the API Lambda's role scoped `s3:`
@@ -35,12 +49,16 @@ actions on its ARN and passes `bucket.name` into the function environment.
 | Per-stage settings, budget constants, prod CORS guard | `config/stages.ts` |
 | SST secret names + dotenv sources (shared with `scripts/deploy.mjs`) | `config/secrets.json`, `config/secrets.ts` |
 | `dotnet publish` of the API Lambda artifact | `artifacts/dotnet-lambda.ts` |
+| `pip install` of the MCP Lambda artifact (hash-locked, cross-platform) | `artifacts/python-lambda.ts` |
 | API Lambda (env, memory, timeout) | `services/api.ts` |
 | API Gateway HTTP API edge (route, throttle, CORS, access logs) | `services/gateway.ts` |
+| MCP Lambda (Clerk issuer, backend URL) | `services/mcp.ts` |
+| MCP HTTP API edge (route, throttle, MCP-specific CORS, access logs) | `services/mcp-gateway.ts` |
 | Next.js (OpenNext) frontend | `services/web.ts` |
 | General-purpose S3 bucket (private, unwired) | `storage/bucket.ts` |
 | Budget alarm | `operations/budget.ts` |
 | IAM primitives | `shared/iam.ts` |
+| Invariant pieces shared by both HTTP API edges (access-log format, URL tidy) | `shared/http-api.ts` |
 | Frozen logical names + output contract | `names.ts` |
 | Stable output assembly | `index.ts` |
 
@@ -67,6 +85,13 @@ actions on its ARN and passes `bucket.name` into the function environment.
 3. Wire only its real dependencies and consumers in `index.ts`.
 4. Add a public output only when operators need one; never rename an existing output key
    (`web`, `api` are a compatibility contract — see `OUTPUT_KEYS`).
+
+### Add an MCP tool
+
+Nothing in `infra/` changes. Tools live in `mcp/looped_in_mcp/tools/` (new module +
+one line in `registry.py`); the deploy repackages the Lambda on its own. Only a new
+*dependency* touches infra indirectly — regenerate `mcp/requirements-lambda.lock`
+(command at the top of `mcp/requirements.txt`) or the hash-checked install fails.
 
 ### Throttle a specific route harder
 

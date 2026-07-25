@@ -4,24 +4,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Looped In — an early-stage full-stack application. Today it is a scaffold: a **Next.js** frontend and a **.NET 10** Web API, wired together as a **Docker Compose** stack. (Replace this paragraph with the product description as the app takes shape.)
+Looped In — an early-stage full-stack application. Today it is a scaffold: a **Next.js** frontend, a **.NET 10** Web API, and a **Python FastMCP** server, wired together as a **Docker Compose** stack. (Replace this paragraph with the product description as the app takes shape.)
 
 ## Layout
 
-The repo root holds the Compose stack, the **SST infra**, and `.claude/skills/`. The **frontend is in `frontend/`** — run all `npm` commands from there. The **backend is in `backend/`** — run all `dotnet` commands from there. Root-level `npm` commands (`npm install`, `npm run infra:check`, deploys) belong to the infra, not to either app.
+The repo root holds the Compose stack, the **SST infra**, and `.claude/skills/`. The **frontend is in `frontend/`** — run all `npm` commands from there. The **backend is in `backend/`** — run all `dotnet` commands from there. The **MCP server is in `mcp/`** — run all `python`/`uv` commands from there. Root-level `npm` commands (`npm install`, `npm run infra:check`, deploys) belong to the infra, not to any app.
 
 ```
 frontend/            ← Next.js 16 App Router app, TypeScript (cd here for npm)
 backend/             ← .NET 10 minimal Web API — LoopedIn.Api + LoopedIn.slnx (cd here for dotnet)
-docker-compose.yml   ← orchestrates frontend (3000) + backend (5114→8080) on a shared network
+mcp/                 ← Python 3.13 FastMCP server — looped_in_mcp/ + server.py (cd here for python/uv); see mcp/README.md
+docker-compose.yml   ← orchestrates frontend (3000) + backend (5114→8080), plus mcp (8000) behind the `mcp` profile
 sst.config.ts        ← thin SST entry point — dynamically imports the modules in infra/
-infra/               ← SST resource modules: config/ (stages, secret manifest), services/ (api, gateway, web), storage/ (S3 bucket), operations/, shared/, names.ts; see infra/README.md
+infra/               ← SST resource modules: config/ (stages, secret manifest), services/ (api, gateway, mcp, mcp-gateway, web), storage/ (S3 bucket), operations/, shared/, names.ts; see infra/README.md
 scripts/deploy.mjs   ← dotenv → SST secrets → deploy (per-stage: local | test | prod); reads infra/config/secrets.json
 DEPLOY.md            ← what gets deployed, secrets table, one-time setup, teardown
 .claude/skills/      ← prime-context (session priming) + future reference skills
 ```
 
-Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.dockerignore`, `backend/Dockerfile` + `backend/.dockerignore`. `.gitignore`s live per-app (`frontend/.gitignore`, `backend/.gitignore`) except the root one, which covers the infra (`.sst/`, root `node_modules/`, `.open-next/`, the Lambda publish dir).
+Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.dockerignore`, `backend/Dockerfile` + `backend/.dockerignore`, `mcp/Dockerfile` + `mcp/.dockerignore`. `.gitignore`s live per-app (`frontend/.gitignore`, `backend/.gitignore`, `mcp/.gitignore`) except the root one, which covers the infra (`.sst/`, root `node_modules/`, `.open-next/`, the Lambda publish dir).
 
 **The services now talk over Clerk-authenticated calls.** The frontend `/me` page (`app/me/page.tsx`) makes a **server-side** call to the backend's protected `GET /me` using `BACKEND_URL` (the Compose network); `NEXT_PUBLIC_API_URL` remains available for browser-side calls via the host port. See **Authentication (Clerk)** below.
 
@@ -45,11 +46,20 @@ Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.doc
 | `dotnet build LoopedIn.slnx` | Build the solution |
 | `dotnet dev-certs https --trust` | Trust the local HTTPS cert (once, for the https profile) |
 
+**MCP server** — from `mcp/` (one-time: `uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python -r requirements.txt`):
+
+| Command | What |
+| --- | --- |
+| `.venv/bin/python server.py` | Run the MCP server on http://localhost:8000/mcp |
+| `curl localhost:8000/health` | Liveness check (unauthenticated by design) |
+| `curl localhost:8000/.well-known/oauth-protected-resource/mcp` | OAuth discovery doc — should list your Clerk instance |
+
 **Docker Compose** — from the repo root:
 
 | Command | What |
 | --- | --- |
-| `docker compose up --build` | Build + run both services |
+| `docker compose up --build` | Build + run frontend + backend |
+| `docker compose --profile mcp up --build` | …plus the MCP server on 8000 |
 | `docker compose up -d` | Start detached |
 | `docker compose logs -f` | Tail logs |
 | `docker compose down` | Stop and remove |
@@ -62,13 +72,14 @@ Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.doc
 | `npm run diff -- --stage test` | Preview infra changes against real state |
 | `npm run deploy:test` | **Real, billable deploy** — go through the `deploy` skill, not by hand |
 
-There is **no test suite** in either app — verify changes by building and running (see the `prime-context` skill). For infra changes the equivalent narrow check is `npm run infra:check`.
+There is **no test suite** in any app — verify changes by building and running (see the `prime-context` skill). For infra changes the equivalent narrow check is `npm run infra:check`.
 
 ## Stack
 
 - **Frontend:** Next.js **16.2.9** + React **19**, TypeScript, **App Router** (`app/`), no `src/` dir, **no Tailwind**, import alias `@/*`. `next.config.ts` sets `output: "standalone"` so the Docker image ships a trimmed `node_modules` + `server.js`. Auth via **Clerk** (`@clerk/nextjs`) — see Authentication below.
 - **Backend:** .NET **10** (`net10.0`) **minimal API** in `backend/LoopedIn.Api/Program.cs` (`GET /` hello + `GET /weatherforecast`). OpenAPI via `Microsoft.AspNetCore.OpenApi` (no Swashbuckle); `Nullable` + `ImplicitUsings` enabled. Requires the **.NET 10 SDK** (installed here via Homebrew → `/opt/homebrew/bin/dotnet`). Protected endpoints are guarded by **Clerk JWT Bearer** auth — see Authentication below.
-- **Containers:** multi-stage Dockerfiles, both final images run **non-root**. Backend listens on `8080` inside the container (`ASPNETCORE_HTTP_PORTS`); host maps it to `5114`.
+- **MCP:** Python **3.13** + **FastMCP 3.x** in `mcp/looped_in_mcp/` (`config`/`auth`/`middleware`/`backend`/`deps`/`app` + `tools/`), served over streamable HTTP at `/mcp`. Clerk is the OAuth **authorization server** via Dynamic Client Registration; this server is a **resource server** (`RemoteAuthProvider` + `JWTVerifier`). Runs under uvicorn locally and **Mangum** on Lambda — `server.py` is the only file that knows the difference. See `mcp/README.md`.
+- **Containers:** multi-stage Dockerfiles, all three final images run **non-root**. Backend listens on `8080` inside the container (`ASPNETCORE_HTTP_PORTS`); host maps it to `5114`. MCP listens on `8000` in both.
 
 ## Database (Neon Postgres)
 
@@ -95,14 +106,23 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 - **`GET /auth/ping`** (public) — connectivity check mirroring `/db/ping`: reuses the JwtBearer handler's own `ConfigurationManager` to fetch Clerk's OIDC discovery → `{ configured, authority, issuer, jwksUri, signingKeys }`; **503** when `Clerk:Authority` is unset.
 - **`GET /me`** (protected, `.RequireAuthorization()`) — returns `{ userId, email, claims }` from the validated token; **401** without a valid bearer. `/`, `/db/ping`, `/weatherforecast` stay public.
 
-**End-to-end:** the frontend `/me` page reads the Clerk token server-side (`await (await auth()).getToken()`) and calls the backend `GET /me` over `BACKEND_URL` — a server-side call, so no CORS and the token never reaches the browser. It's the smoke test for the whole trust chain.
+**MCP** (`mcp/looped_in_mcp/auth.py`):
+- Reads **`CLERK_ISSUER`** — the same Clerk Frontend API URL the backend uses as `Clerk__Authority`. That shared issuer is what lets an MCP tool forward the caller's token straight to the API. In the cloud it comes from the `ClerkAuthority` SST secret; locally from `mcp/.env.local`.
+- **No OAuth client id/secret exists anywhere** — clients self-register with Clerk through **Dynamic Client Registration**, which must be toggled on in the Clerk Dashboard (→ OAuth applications) or no client can connect.
+- Unlike the API and frontend, the MCP server has **no unconfigured mode**: `Settings.from_env()` raises without `CLERK_ISSUER`. That's why the Compose service is behind the `mcp` profile.
+- **`SERVER_BASE_URL` is deliberately unset in the cloud.** A Lambda can't reference its own public URL without a circular dependency, so `middleware.py` rewrites the OAuth discovery URLs to the host each request actually arrived on. Set it only behind a stable custom domain — or locally, to your ngrok tunnel URL.
+
+**End-to-end:** the frontend `/me` page reads the Clerk token server-side (`await (await auth()).getToken()`) and calls the backend `GET /me` over `BACKEND_URL` — a server-side call, so no CORS and the token never reaches the browser. It's the smoke test for the whole trust chain. The MCP server's `my_api_identity` tool is the same test from the agent side, and `/connect` is the page that tells users how to hook a client up.
 
 ## Deployment (SST → AWS)
 
 **Nothing has been deployed yet.** `sst.config.ts` is a thin entry point that dynamically imports the resource modules in **`infra/`** (SST forbids top-level imports there). `infra/index.ts` composes the graph; `infra/README.md` documents ownership per module, extension recipes, and the change checklist. **Read it before editing anything under `infra/`.**
 
 - **Region is `ap-southeast-2`** (Sydney) for every stage — `AWS_REGION` in `infra/config/stages.ts`, not per-stage.
-- **API Gateway is the only way into the API Lambda.** An HTTP API (`$default` stage + `$default` route, AWS_PROXY, payload format 2.0) fronts the .NET Lambda with throttling, access logs, and CORS. There is **no Function URL** — the single `lambda:Permission` is scoped to the API's execution ARN. `AddAWSLambdaHosting(LambdaEventSource.HttpApi)` in `Program.cs` is the matching half; don't change that event source without changing `payloadFormatVersion`.
+- **API Gateway is the only way into either Lambda.** An HTTP API (`$default` stage + `$default` route, AWS_PROXY, payload format 2.0) fronts the .NET Lambda with throttling, access logs, and CORS; a **second, separate** HTTP API does the same for the MCP Lambda. There are **no Function URLs** — each `lambda:Permission` is scoped to its own API's execution ARN. `AddAWSLambdaHosting(LambdaEventSource.HttpApi)` in `Program.cs` and Mangum in `mcp/server.py` are the matching halves; don't change either event source without changing `payloadFormatVersion`.
+- **The MCP server has its own gateway on purpose.** Its OAuth discovery path (`/.well-known/oauth-protected-resource/mcp`) would collide with the API's `$default` catch-all, and a separate origin keeps the connector URL, throttle, and access log independent. Its CORS is **wildcard on every stage** — safe because it's bearer-token auth with `allowCredentials` off, and required by browser-based MCP clients. The prod origin guard covers the API only.
+- **The MCP Lambda artifact is hash-locked.** `infra/artifacts/python-lambda.ts` runs `pip install --require-hashes` against `mcp/requirements-lambda.lock`, cross-resolved for `python3.13` + `manylinux2014_aarch64`, so the deploy host needs **`python3.13` on `PATH`**. After changing `mcp/requirements.txt`, regenerate the lock (command at the top of that file) or the install fails.
+- **`MCP_URL` is not `NEXT_PUBLIC_`.** `NEXT_PUBLIC_*` values are inlined at build time; the connector URL only exists after the MCP gateway is created. `app/connect/page.tsx` reads it server-side after `await connection()`, so it resolves per request in Compose and on Lambda alike.
 - **CORS lives on the gateway, not in `Program.cs`.** The .NET app registers no CORS middleware, so exactly one layer emits `Access-Control-Allow-*`. Adding ASP.NET CORS would produce duplicate headers that browsers reject.
 - **`names.ts` is append-only.** Logical names are the identity behind Pulumi URNs — renaming one destroys and recreates that resource. `OUTPUT_KEYS` (`web`, `api`, `bucket`) is a documented contract.
 - **The S3 bucket in `infra/storage/bucket.ts` is intentionally unwired.** Private, TLS-only, no CORS, no versioning; no code reads or writes it and the API Lambda has no `s3:` permission on it. To connect it, grant scoped actions on its ARN in `shared/iam.ts` and pass `bucket.name` into the function env in `services/api.ts` — don't reach for `s3:*`.
@@ -112,16 +132,17 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 
 ## Agent teams (Claude Code)
 
-This repo is set up for [agent teams](https://code.claude.com/docs/en/agent-teams) — `.claude/settings.json` enables `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`. Teams shine here because the work splits cleanly along the `frontend/` ↔ `backend/` ↔ infra boundary, so teammates own non-overlapping files and don't step on each other.
+This repo is set up for [agent teams](https://code.claude.com/docs/en/agent-teams) — `.claude/settings.json` enables `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`. Teams shine here because the work splits cleanly along the `frontend/` ↔ `backend/` ↔ `mcp/` ↔ infra boundary, so teammates own non-overlapping files and don't step on each other.
 
-**Standard full-stack team** — three project subagents in `.claude/agents/` double as teammate roles. Spawn them by name, e.g.:
+**Standard full-stack team** — four project subagents in `.claude/agents/` double as teammate roles. Spawn them by name, e.g.:
 
-> Spawn three teammates for this change: a **frontend** teammate, a **backend** teammate, and an **infra** teammate. Frontend owns `frontend/`, backend owns `backend/`, infra owns Compose/Dockerfiles/SST. Have them coordinate on the `/me` contract.
+> Spawn four teammates for this change: a **frontend** teammate, a **backend** teammate, an **mcp** teammate, and an **infra** teammate. Frontend owns `frontend/`, backend owns `backend/`, mcp owns `mcp/`, infra owns Compose/Dockerfiles/SST. Have them coordinate on the `/me` contract.
 
 | Role (`.claude/agents/`) | Owns | Don't touch |
 | --- | --- | --- |
-| `frontend` | `frontend/` (Next 16 App Router, Clerk UI, Cache Components) | backend, infra |
-| `backend`  | `backend/LoopedIn.Api` (endpoints, Clerk JWT, Neon/Npgsql) | frontend, infra |
+| `frontend` | `frontend/` (Next 16 App Router, Clerk UI, Cache Components) | backend, mcp, infra |
+| `backend`  | `backend/LoopedIn.Api` (endpoints, Clerk JWT, Neon/Npgsql) | frontend, mcp, infra |
+| `mcp`      | `mcp/` (FastMCP tools, Clerk OAuth/DCR, the API seam) | frontend, backend, infra |
 | `infra`    | `docker-compose.yml`, Dockerfiles, `sst.config.ts` + `infra/`, OpenNext, env wiring | app source |
 
 **What teammates do and don't inherit** (per the docs):

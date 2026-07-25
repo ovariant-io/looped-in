@@ -29,6 +29,9 @@ export function HeaderNav({ initialSignedIn }: { initialSignedIn: boolean }) {
           <Link href="/me" className={styles.navLink}>
             My API identity
           </Link>
+          <Link href="/connect" className={styles.navLink}>
+            Connect AI
+          </Link>
           <UserButton />
         </>
       ) : (

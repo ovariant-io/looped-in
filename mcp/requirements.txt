@@ -1,0 +1,24 @@
+# Human-maintained dependency ranges for local development.
+# The cloud deploy installs the hash-locked requirements-lambda.lock instead
+# (see infra/artifacts/python-lambda.ts) — regenerate it after editing this file:
+#   uv pip compile mcp/requirements.txt --generate-hashes \
+#     --python-version 3.13 --python-platform aarch64-manylinux2014 \
+#     -o mcp/requirements-lambda.lock
+
+# FastMCP — the RemoteAuthProvider + JWTVerifier Clerk DCR wiring this server
+# relies on. The 3.x floor is the line that surface ships in; the <4 cap guards
+# against the next major's breaking changes.
+fastmcp>=3.4,<4
+# Used directly for AnyHttpUrl (also a fastmcp dependency; declared explicitly).
+pydantic>=2
+# HTTP client for the Looped In API seam (looped_in_mcp/backend.py). Also a
+# fastmcp dependency; declared explicitly since backend.py imports it directly.
+httpx>=0.27
+# Loads mcp/.env.local for local dev, mirroring the backend's .env.local convention.
+python-dotenv>=1
+# ASGI→AWS Lambda adapter for the cloud deploy (server.handler behind API Gateway).
+# Harmless locally; only the Lambda path imports it at request time.
+mangum>=0.18
+# ASGI server for local `python server.py` (also a fastmcp dependency; explicit
+# since __main__ calls it directly). Not used on Lambda (Mangum drives the app).
+uvicorn>=0.30

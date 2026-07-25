@@ -1,5 +1,6 @@
 import type { StageSettings } from "../config/stages";
 import { LOGICAL_NAMES } from "../names";
+import { ACCESS_LOG_FORMAT, withoutTrailingSlashes } from "../shared/http-api";
 
 // Aggregate account-wide throttle for the API (best-effort — not per-IP). The stack scales
 // to zero, so this is mostly a runaway-cost backstop, not a capacity plan.
@@ -63,25 +64,6 @@ export function createApiGateway(options: ApiGatewayOptions) {
     retentionInDays: options.settings.accessLogRetentionDays,
   });
 
-  // Structured access-log line (JSON.stringify keeps it single-line, as API Gateway
-  // requires). No headers, tokens, query strings, or bodies — sourceIp is a $context
-  // variable (not a header) kept for abuse investigation, bounded by the log retention.
-  const accessLogFormat = JSON.stringify({
-    requestId: "$context.requestId",
-    requestTime: "$context.requestTime",
-    httpMethod: "$context.httpMethod",
-    routeKey: "$context.routeKey",
-    path: "$context.path",
-    status: "$context.status",
-    responseLatencyMs: "$context.responseLatency",
-    integrationStatus: "$context.integrationStatus",
-    integrationLatencyMs: "$context.integrationLatency",
-    integrationErrorMessage: "$context.integrationErrorMessage",
-    errorType: "$context.error.responseType",
-    errorMessage: "$context.error.message",
-    sourceIp: "$context.identity.sourceIp",
-  });
-
   new aws.apigatewayv2.Stage(
     LOGICAL_NAMES.httpApiStage,
     {
@@ -96,7 +78,7 @@ export function createApiGateway(options: ApiGatewayOptions) {
       },
       accessLogSettings: {
         destinationArn: accessLogs.arn,
-        format: accessLogFormat,
+        format: ACCESS_LOG_FORMAT,
       },
     },
     // Route settings referencing a route that doesn't exist yet fail UpdateStage.
@@ -111,8 +93,7 @@ export function createApiGateway(options: ApiGatewayOptions) {
     sourceArn: $interpolate`${httpApi.executionArn}/*/*`,
   });
 
-  // execute-api endpoints have no trailing slash; strip defensively so `${base}/me` stays clean.
-  const baseUrl = httpApi.apiEndpoint.apply((url) => url.replace(/\/+$/, ""));
+  const baseUrl = httpApi.apiEndpoint.apply(withoutTrailingSlashes);
 
   return Object.freeze({ httpApi, baseUrl });
 }

@@ -1,10 +1,13 @@
 import { buildDotnetLambdaArtifacts } from "./artifacts/dotnet-lambda";
+import { buildPythonLambdaArtifacts } from "./artifacts/python-lambda";
 import { createSecrets } from "./config/secrets";
 import { assertStageDeployable, resolveStageSettings } from "./config/stages";
 import { LOGICAL_NAMES, type OutputKey } from "./names";
 import { createBudget } from "./operations/budget";
 import { createApiService } from "./services/api";
 import { createApiGateway } from "./services/gateway";
+import { createMcpService } from "./services/mcp";
+import { createMcpGateway } from "./services/mcp-gateway";
 import { createWebService } from "./services/web";
 import { createLambdaExecutionRole } from "./shared/iam";
 import { createStorageBucket } from "./storage/bucket";
@@ -27,6 +30,7 @@ export function composeInfrastructure(
 
   const secrets = createSecrets();
   const artifacts = buildDotnetLambdaArtifacts(options.repoRoot);
+  const pythonArtifacts = buildPythonLambdaArtifacts(options.repoRoot);
 
   const role = createLambdaExecutionRole(
     LOGICAL_NAMES.lambdaRole,
@@ -39,7 +43,28 @@ export function composeInfrastructure(
     role,
   });
   const gateway = createApiGateway({ settings, apiLambda: api.lambda });
-  const web = createWebService({ secrets, apiBaseUrl: gateway.baseUrl });
+
+  // The MCP server sits downstream of the API (it forwards the caller's token to it) and
+  // upstream of the web app (which shows the connector URL) — hence this position in the
+  // order. Its own execution role: separate identity, separate log group, and no shared
+  // permissions to inherit if either function is granted something later.
+  const mcpRole = createLambdaExecutionRole(
+    LOGICAL_NAMES.mcpRole,
+    LOGICAL_NAMES.mcpRoleLogs,
+  );
+  const mcp = createMcpService({
+    artifactDir: pythonArtifacts.mcpDir,
+    secrets,
+    role: mcpRole,
+    apiBaseUrl: gateway.baseUrl,
+  });
+  const mcpGateway = createMcpGateway({ settings, mcpLambda: mcp.lambda });
+
+  const web = createWebService({
+    secrets,
+    apiBaseUrl: gateway.baseUrl,
+    mcpConnectorUrl: mcpGateway.connectorUrl,
+  });
   // Standalone by design: nothing above depends on the bucket yet (see storage/bucket.ts).
   const storage = createStorageBucket({ settings });
   createBudget(settings);
@@ -50,5 +75,8 @@ export function composeInfrastructure(
     api: gateway.baseUrl,
     // Auto-generated S3 bucket name — the only handle operators have on an unwired bucket.
     bucket: storage.bucket.name,
+    // The URL to paste into an MCP client as a custom connector (the /connect page shows it
+    // too, for people who never see stack outputs).
+    mcp: mcpGateway.connectorUrl,
   };
 }

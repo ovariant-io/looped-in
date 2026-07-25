@@ -14,9 +14,18 @@ export const LOGICAL_NAMES = Object.freeze({
   web: "LoopedInWeb",
   budget: "LoopedInCostGuard",
   storageBucket: "LoopedInStorage",
+  mcpRole: "LoopedInMcpRole",
+  mcpRoleLogs: "LoopedInMcpLogs",
+  mcpFunction: "LoopedInMcp",
+  mcpHttpApi: "LoopedInMcpHttpApi",
+  mcpHttpApiIntegration: "LoopedInMcpHttpApiIntegration",
+  mcpHttpApiDefaultRoute: "LoopedInMcpHttpApiDefaultRoute",
+  mcpHttpApiAccessLogs: "LoopedInMcpHttpApiAccessLogs",
+  mcpHttpApiStage: "LoopedInMcpHttpApiStage",
+  mcpHttpApiInvokePermission: "LoopedInMcpHttpApiInvoke",
 });
 
 // Stack outputs are a compatibility contract (DEPLOY.md documents them). Never rename an
-// existing key.
-export const OUTPUT_KEYS = Object.freeze(["web", "api", "bucket"] as const);
+// existing key; appending a new one is safe.
+export const OUTPUT_KEYS = Object.freeze(["web", "api", "bucket", "mcp"] as const);
 export type OutputKey = (typeof OUTPUT_KEYS)[number];
