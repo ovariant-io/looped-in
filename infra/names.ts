@@ -13,9 +13,10 @@ export const LOGICAL_NAMES = Object.freeze({
   httpApiInvokePermission: "LoopedInHttpApiInvoke",
   web: "LoopedInWeb",
   budget: "LoopedInCostGuard",
+  storageBucket: "LoopedInStorage",
 });
 
 // Stack outputs are a compatibility contract (DEPLOY.md documents them). Never rename an
 // existing key.
-export const OUTPUT_KEYS = Object.freeze(["web", "api"] as const);
+export const OUTPUT_KEYS = Object.freeze(["web", "api", "bucket"] as const);
 export type OutputKey = (typeof OUTPUT_KEYS)[number];

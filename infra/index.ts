@@ -7,6 +7,7 @@ import { createApiService } from "./services/api";
 import { createApiGateway } from "./services/gateway";
 import { createWebService } from "./services/web";
 import { createLambdaExecutionRole } from "./shared/iam";
+import { createStorageBucket } from "./storage/bucket";
 
 interface ComposeInfrastructureOptions {
   readonly repoRoot: string;
@@ -39,11 +40,15 @@ export function composeInfrastructure(
   });
   const gateway = createApiGateway({ settings, apiLambda: api.lambda });
   const web = createWebService({ secrets, apiBaseUrl: gateway.baseUrl });
+  // Standalone by design: nothing above depends on the bucket yet (see storage/bucket.ts).
+  const storage = createStorageBucket({ settings });
   createBudget(settings);
 
   return {
     web: web.web.url,
     // The API Gateway HTTP API endpoint — the only public way into the API Lambda.
     api: gateway.baseUrl,
+    // Auto-generated S3 bucket name — the only handle operators have on an unwired bucket.
+    bucket: storage.bucket.name,
   };
 }

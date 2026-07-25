@@ -20,6 +20,7 @@ others are torn down completely.
 | **Frontend** (`frontend/`) | Next.js via OpenNext → Lambda + CloudFront + S3 (+ SQS/DynamoDB/KV for ISR/cache) | scales to zero |
 | **API** (`backend/LoopedIn.Api`) | .NET 10 Lambda (`dotnet10` managed runtime, arm64) | scales to zero |
 | **API edge** | API Gateway **HTTP API** (`$default` stage + route) — throttled, access-logged, CORS | pay-per-request |
+| **Storage** | Private S3 bucket (`infra/storage/bucket.ts`) — **not wired to any code yet** | $0 while empty |
 | **Cost guard** | AWS Budgets alarm (default $10/mo, emails at 50% actual / 100% forecast) | free |
 | Postgres | **Neon** — external, not on the AWS bill | — |
 | Auth | **Clerk** — external, not on the AWS bill | — |
@@ -33,8 +34,8 @@ something is already deployed against the old URL.
 ## Where the infra lives
 
 `sst.config.ts` is a thin entry point; the resource modules live in **`infra/`** — `config/`
-(stage settings, secret manifest), `services/` (`api`, `gateway`, `web`), `operations/`,
-`shared/`, and `names.ts` (frozen logical names + the output contract). See
+(stage settings, secret manifest), `services/` (`api`, `gateway`, `web`), `storage/`,
+`operations/`, `shared/`, and `names.ts` (frozen logical names + the output contract). See
 [`infra/README.md`](infra/README.md) for ownership, extension recipes, and the change checklist.
 `npm run infra:check` typechecks the whole directory without touching AWS.
 
@@ -73,9 +74,9 @@ npm run deploy:prod       # stage "prod" (protected, resources retained on remov
 npm run deploy -- local   # stage "local" (a personal cloud env; day-to-day local dev uses docker compose)
 ```
 
-Outputs print the CloudFront `web` URL and the `api` API Gateway endpoint (these two keys are a
-compatibility contract — see `OUTPUT_KEYS` in `infra/names.ts`). `npm run diff -- --stage test`
-previews changes; `npm run console` opens the dashboard.
+Outputs print the CloudFront `web` URL, the `api` API Gateway endpoint, and the `bucket` S3
+bucket name (these keys are a compatibility contract — see `OUTPUT_KEYS` in `infra/names.ts`).
+`npm run diff -- --stage test` previews changes; `npm run console` opens the dashboard.
 
 `prod` **fails fast before touching AWS** while `STAGE_CONFIG.prod.corsAllowOrigins` is empty or
 `"*"` (`infra/config/stages.ts`) — prod must never launch with wildcard CORS. Fill in the real

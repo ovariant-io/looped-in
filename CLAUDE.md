@@ -15,7 +15,7 @@ frontend/            ← Next.js 16 App Router app, TypeScript (cd here for npm)
 backend/             ← .NET 10 minimal Web API — LoopedIn.Api + LoopedIn.slnx (cd here for dotnet)
 docker-compose.yml   ← orchestrates frontend (3000) + backend (5114→8080) on a shared network
 sst.config.ts        ← thin SST entry point — dynamically imports the modules in infra/
-infra/               ← SST resource modules: config/ (stages, secret manifest), services/ (api, gateway, web), operations/, shared/, names.ts; see infra/README.md
+infra/               ← SST resource modules: config/ (stages, secret manifest), services/ (api, gateway, web), storage/ (S3 bucket), operations/, shared/, names.ts; see infra/README.md
 scripts/deploy.mjs   ← dotenv → SST secrets → deploy (per-stage: local | test | prod); reads infra/config/secrets.json
 DEPLOY.md            ← what gets deployed, secrets table, one-time setup, teardown
 .claude/skills/      ← prime-context (session priming) + future reference skills
@@ -104,7 +104,8 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 - **Region is `ap-southeast-2`** (Sydney) for every stage — `AWS_REGION` in `infra/config/stages.ts`, not per-stage.
 - **API Gateway is the only way into the API Lambda.** An HTTP API (`$default` stage + `$default` route, AWS_PROXY, payload format 2.0) fronts the .NET Lambda with throttling, access logs, and CORS. There is **no Function URL** — the single `lambda:Permission` is scoped to the API's execution ARN. `AddAWSLambdaHosting(LambdaEventSource.HttpApi)` in `Program.cs` is the matching half; don't change that event source without changing `payloadFormatVersion`.
 - **CORS lives on the gateway, not in `Program.cs`.** The .NET app registers no CORS middleware, so exactly one layer emits `Access-Control-Allow-*`. Adding ASP.NET CORS would produce duplicate headers that browsers reject.
-- **`names.ts` is append-only.** Logical names are the identity behind Pulumi URNs — renaming one destroys and recreates that resource. `OUTPUT_KEYS` (`web`, `api`) is a documented contract.
+- **`names.ts` is append-only.** Logical names are the identity behind Pulumi URNs — renaming one destroys and recreates that resource. `OUTPUT_KEYS` (`web`, `api`, `bucket`) is a documented contract.
+- **The S3 bucket in `infra/storage/bucket.ts` is intentionally unwired.** Private, TLS-only, no CORS, no versioning; no code reads or writes it and the API Lambda has no `s3:` permission on it. To connect it, grant scoped actions on its ARN in `shared/iam.ts` and pass `bucket.name` into the function env in `services/api.ts` — don't reach for `s3:*`.
 - **One secret manifest**, `infra/config/secrets.json`, is read by both `scripts/deploy.mjs` (dotenv → SSM) and `infra/config/secrets.ts` (the `sst.Secret` handles), so the two can't drift.
 - **`prod` fails fast** before touching AWS while `STAGE_CONFIG.prod.corsAllowOrigins` is empty or `"*"`.
 - Deploys are **denied by `.claude/settings.json`** and go through the `deploy` skill deliberately. `npm run infra:check` is the safe local check.

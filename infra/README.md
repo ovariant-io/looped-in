@@ -16,10 +16,16 @@ CloudFront + S3 (OpenNext)     API Gateway HTTP API ($default stage)
                                   .NET 10 API Lambda (arm64, dotnet10)
                                          │  public internet, TLS
                                    Neon Postgres · Clerk JWKS
+
+S3 storage bucket (private)  ← standalone: no consumer, no IAM grant, no env var yet
 ```
 
 The API Lambda has **no Function URL** — API Gateway is its only invoke path, granted by a
 single `lambda:Permission` scoped to this API's execution ARN.
+
+The storage bucket (`storage/bucket.ts`) is deliberately disconnected from that graph:
+nothing in either app can reach it until someone grants the API Lambda's role scoped `s3:`
+actions on its ARN and passes `bucket.name` into the function environment.
 
 ## Ownership
 
@@ -32,6 +38,7 @@ single `lambda:Permission` scoped to this API's execution ARN.
 | API Lambda (env, memory, timeout) | `services/api.ts` |
 | API Gateway HTTP API edge (route, throttle, CORS, access logs) | `services/gateway.ts` |
 | Next.js (OpenNext) frontend | `services/web.ts` |
+| General-purpose S3 bucket (private, unwired) | `storage/bucket.ts` |
 | Budget alarm | `operations/budget.ts` |
 | IAM primitives | `shared/iam.ts` |
 | Frozen logical names + output contract | `names.ts` |
