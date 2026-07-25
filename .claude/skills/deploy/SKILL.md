@@ -43,6 +43,9 @@ whatever account the active credentials point at. It is **not** a dry run.
      command. Show this to the user.
    - If it **fails fast** (missing required secret), it names the exact `<app>/.env.<env>` key.
      Report that and **stop** — the fix is to populate that key, not to retry.
+   - For `prod`, also expect the stage guard: the deploy aborts before touching AWS while
+     `STAGE_CONFIG.prod.corsAllowOrigins` is empty or `"*"` (`infra/config/stages.ts`). Report it
+     and stop — the fix is to set the real web origin(s), not to bypass the guard.
 4. **Confirm** — show the user: target env/stage, that this is a real billable deploy, and (for
    `prod`) that it is protected/retained. Get an explicit go-ahead. Do not deploy without it.
 5. **Deploy**:
@@ -52,13 +55,15 @@ whatever account the active credentials point at. It is **not** a dry run.
    ```
    Stream the output. The deploy publishes the .NET API for Lambda, loads the secrets, and brings
    up the stack.
-6. **Report outputs** — surface the printed `web` (CloudFront URL) and `api` (Lambda Function URL).
+6. **Report outputs** — surface the printed `web` (CloudFront URL) and `api` (API Gateway HTTP API endpoint).
 7. **On failure** — surface the exact error verbatim; do **not** blindly retry. If resources were
    partially created, the clean recovery is `npx sst remove --stage <env>`.
 
 ## Secrets, by env
 
-`scripts/deploy.mjs` maps these (all `.env.<env>` files are gitignored):
+`scripts/deploy.mjs` and `infra/config/secrets.ts` both read **`infra/config/secrets.json`**, so
+this table is a copy of that manifest — check the JSON if they ever disagree (all `.env.<env>`
+files are gitignored):
 
 | SST secret | Source | Key | Required |
 | --- | --- | --- | --- |

@@ -10,6 +10,9 @@
 // Reads (whichever exist):
 //   backend/.env.<env>   → DATABASE_URL, Clerk__Authority, Clerk__AuthorizedParties
 //   frontend/.env.<env>  → NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY
+//
+// The actual `sst deploy` runs `dotnet publish` for the API Lambda, so a host .NET 10 SDK
+// is required (see DEPLOY.md). `--dry-run` resolves secrets and prints without it.
 
 import { execFileSync } from "node:child_process";
 import {
@@ -40,13 +43,11 @@ if (!ENVS.includes(env)) {
 }
 
 // SST secret name  ←  { which app's .env file, which key in it, required? }
-const SECRETS = [
-  { name: "DatabaseUrl", app: "backend", key: "DATABASE_URL", required: true },
-  { name: "ClerkAuthority", app: "backend", key: "Clerk__Authority", required: true },
-  { name: "ClerkAuthorizedParties", app: "backend", key: "Clerk__AuthorizedParties", required: false },
-  { name: "ClerkPublishableKey", app: "frontend", key: "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", required: true },
-  { name: "ClerkSecretKey", app: "frontend", key: "CLERK_SECRET_KEY", required: true },
-];
+// Shared manifest with the infra modules: infra/config/secrets.ts declares the matching
+// sst.Secret handles from the same file, so the two sides can't drift.
+const SECRETS = JSON.parse(
+  readFileSync(join(repoRoot, "infra", "config", "secrets.json"), "utf8"),
+);
 
 /** Minimal dotenv parser: `KEY=value`, `#` comments, optional surrounding quotes. */
 function parseDotenv(path) {

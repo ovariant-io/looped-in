@@ -12,9 +12,12 @@
     "diff": "sst diff",
     "remove": "sst remove",
     "console": "sst console",
-    "secrets": "sst secret list"
+    "secrets": "sst secret list",
+    "infra:check": "tsc -p infra/tsconfig.json"
   },
   "devDependencies": {
-    "sst": "^4"
+    "@types/node": "^22",
+    "sst": "^4",
+    "typescript": "^5"
   }
 }

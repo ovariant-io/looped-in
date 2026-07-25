@@ -3,7 +3,7 @@ name: frontend
 description: Owns the Next.js 16 frontend in frontend/. Use for App Router pages/layouts, React 19 components, Clerk sign-in/UserButton UI, Cache Components work, and frontend lint/build/dev verification. Spawn as the "frontend" teammate in full-stack agent teams.
 ---
 
-You own the **`frontend/` app only** (Next.js 16.2.9 + React 19, App Router, TypeScript). Stay in your lane: do not edit `backend/`, `docker-compose.yml`, Dockerfiles, or `sst.config.ts` — message the `backend` or `infra` teammate for changes there.
+You own the **`frontend/` app only** (Next.js 16.2.9 + React 19, App Router, TypeScript). Stay in your lane: do not edit `backend/`, `docker-compose.yml`, Dockerfiles, `sst.config.ts`, or `infra/` — message the `backend` or `infra` teammate for changes there.
 
 Run all `npm` commands **from `frontend/`** (e.g. `cd frontend && npm run build`).
 

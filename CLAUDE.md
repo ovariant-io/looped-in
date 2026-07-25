@@ -8,16 +8,20 @@ Looped In — an early-stage full-stack application. Today it is a scaffold: a *
 
 ## Layout
 
-The repo root holds the Compose stack and `.claude/skills/`. The **frontend is in `frontend/`** — run all `npm` commands from there. The **backend is in `backend/`** — run all `dotnet` commands from there.
+The repo root holds the Compose stack, the **SST infra**, and `.claude/skills/`. The **frontend is in `frontend/`** — run all `npm` commands from there. The **backend is in `backend/`** — run all `dotnet` commands from there. Root-level `npm` commands (`npm install`, `npm run infra:check`, deploys) belong to the infra, not to either app.
 
 ```
 frontend/            ← Next.js 16 App Router app, TypeScript (cd here for npm)
 backend/             ← .NET 10 minimal Web API — LoopedIn.Api + LoopedIn.slnx (cd here for dotnet)
 docker-compose.yml   ← orchestrates frontend (3000) + backend (5114→8080) on a shared network
+sst.config.ts        ← thin SST entry point — dynamically imports the modules in infra/
+infra/               ← SST resource modules: config/ (stages, secret manifest), services/ (api, gateway, web), operations/, shared/, names.ts; see infra/README.md
+scripts/deploy.mjs   ← dotenv → SST secrets → deploy (per-stage: local | test | prod); reads infra/config/secrets.json
+DEPLOY.md            ← what gets deployed, secrets table, one-time setup, teardown
 .claude/skills/      ← prime-context (session priming) + future reference skills
 ```
 
-Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.dockerignore`, `backend/Dockerfile` + `backend/.dockerignore`. `.gitignore`s live per-app (`frontend/.gitignore`, `backend/.gitignore`); there is no root-level Node/.NET ignore.
+Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.dockerignore`, `backend/Dockerfile` + `backend/.dockerignore`. `.gitignore`s live per-app (`frontend/.gitignore`, `backend/.gitignore`) except the root one, which covers the infra (`.sst/`, root `node_modules/`, `.open-next/`, the Lambda publish dir).
 
 **The services now talk over Clerk-authenticated calls.** The frontend `/me` page (`app/me/page.tsx`) makes a **server-side** call to the backend's protected `GET /me` using `BACKEND_URL` (the Compose network); `NEXT_PUBLIC_API_URL` remains available for browser-side calls via the host port. See **Authentication (Clerk)** below.
 
@@ -50,7 +54,15 @@ Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.doc
 | `docker compose logs -f` | Tail logs |
 | `docker compose down` | Stop and remove |
 
-There is **no test suite** in either app — verify changes by building and running (see the `prime-context` skill).
+**Infra** — from the repo root (`npm install` once):
+
+| Command | What |
+| --- | --- |
+| `npm run infra:check` | TypeScript-validates `infra/` + `sst.config.ts` — no AWS access |
+| `npm run diff -- --stage test` | Preview infra changes against real state |
+| `npm run deploy:test` | **Real, billable deploy** — go through the `deploy` skill, not by hand |
+
+There is **no test suite** in either app — verify changes by building and running (see the `prime-context` skill). For infra changes the equivalent narrow check is `npm run infra:check`.
 
 ## Stack
 
@@ -73,7 +85,7 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 - `ClerkProvider` wraps the body in `app/layout.tsx` (**inside `<body>`**, not `<html>`). The header shows sign-in/sign-up controls when signed out and a `UserButton` when signed in (`Show` / `SignInButton` / `SignUpButton` / `UserButton`), plus a "My API identity" link to `/me`.
 - **`proxy.ts`** (Next 16 uses `proxy.ts`, **not** `middleware.ts`) protects all non-public routes — so `/` redirects to `/sign-in` when signed out; only the `app/sign-in` and `app/sign-up` routes are public. Its `config.matcher` includes `'/__clerk/:path*'` after `'/(api|trpc)(.*)'`.
 - Publishable/secret keys live in gitignored **`frontend/.env.local`** (written by `clerk init`). **Never expose `CLERK_SECRET_KEY` client-side.** `auth()` is **async** — always `await auth()`; import it from `@clerk/nextjs/server` in server code.
-- Dynamic auth UI is wrapped in `<Suspense>` so it stays compatible with `cacheComponents: true`.
+- Dynamic auth UI is wrapped in `<Suspense>`. Note `next.config.ts` currently sets **`cacheComponents: false`** — OpenNext can't resume PPR, so the deployed app would serve only the static shell. The Suspense boundaries are kept so the flag can be flipped back on if the frontend ever moves to Vercel.
 
 **Backend** (`Microsoft.AspNetCore.Authentication.JwtBearer`):
 - Configured in `Infrastructure/Authentication/AuthenticationServiceCollectionExtensions.cs` (`AddClerkAuthentication`), wired in `Program.cs` with `UseAuthentication()` / `UseAuthorization()`.
@@ -84,6 +96,18 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 - **`GET /me`** (protected, `.RequireAuthorization()`) — returns `{ userId, email, claims }` from the validated token; **401** without a valid bearer. `/`, `/db/ping`, `/weatherforecast` stay public.
 
 **End-to-end:** the frontend `/me` page reads the Clerk token server-side (`await (await auth()).getToken()`) and calls the backend `GET /me` over `BACKEND_URL` — a server-side call, so no CORS and the token never reaches the browser. It's the smoke test for the whole trust chain.
+
+## Deployment (SST → AWS)
+
+**Nothing has been deployed yet.** `sst.config.ts` is a thin entry point that dynamically imports the resource modules in **`infra/`** (SST forbids top-level imports there). `infra/index.ts` composes the graph; `infra/README.md` documents ownership per module, extension recipes, and the change checklist. **Read it before editing anything under `infra/`.**
+
+- **Region is `ap-southeast-2`** (Sydney) for every stage — `AWS_REGION` in `infra/config/stages.ts`, not per-stage.
+- **API Gateway is the only way into the API Lambda.** An HTTP API (`$default` stage + `$default` route, AWS_PROXY, payload format 2.0) fronts the .NET Lambda with throttling, access logs, and CORS. There is **no Function URL** — the single `lambda:Permission` is scoped to the API's execution ARN. `AddAWSLambdaHosting(LambdaEventSource.HttpApi)` in `Program.cs` is the matching half; don't change that event source without changing `payloadFormatVersion`.
+- **CORS lives on the gateway, not in `Program.cs`.** The .NET app registers no CORS middleware, so exactly one layer emits `Access-Control-Allow-*`. Adding ASP.NET CORS would produce duplicate headers that browsers reject.
+- **`names.ts` is append-only.** Logical names are the identity behind Pulumi URNs — renaming one destroys and recreates that resource. `OUTPUT_KEYS` (`web`, `api`) is a documented contract.
+- **One secret manifest**, `infra/config/secrets.json`, is read by both `scripts/deploy.mjs` (dotenv → SSM) and `infra/config/secrets.ts` (the `sst.Secret` handles), so the two can't drift.
+- **`prod` fails fast** before touching AWS while `STAGE_CONFIG.prod.corsAllowOrigins` is empty or `"*"`.
+- Deploys are **denied by `.claude/settings.json`** and go through the `deploy` skill deliberately. `npm run infra:check` is the safe local check.
 
 ## Agent teams (Claude Code)
 
@@ -97,7 +121,7 @@ This repo is set up for [agent teams](https://code.claude.com/docs/en/agent-team
 | --- | --- | --- |
 | `frontend` | `frontend/` (Next 16 App Router, Clerk UI, Cache Components) | backend, infra |
 | `backend`  | `backend/LoopedIn.Api` (endpoints, Clerk JWT, Neon/Npgsql) | frontend, infra |
-| `infra`    | `docker-compose.yml`, Dockerfiles, `sst.config.ts`, OpenNext, env wiring | app source |
+| `infra`    | `docker-compose.yml`, Dockerfiles, `sst.config.ts` + `infra/`, OpenNext, env wiring | app source |
 
 **What teammates do and don't inherit** (per the docs):
 - They **read `CLAUDE.md`** (this file + `frontend/CLAUDE.md`) but **not** the lead's conversation history — put task-specific context in the spawn prompt.

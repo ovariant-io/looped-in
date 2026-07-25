@@ -26,7 +26,8 @@ export default function MePage() {
         against Clerk&apos;s JWKS.
       </p>
       {/* auth() + the no-store fetch are request-dynamic, so the dynamic work
-          lives in its own Suspense boundary (Cache Components is enabled). */}
+          lives in its own Suspense boundary. Cache Components is currently off
+          (see next.config.ts); the boundary is kept so it can be re-enabled. */}
       <Suspense
         fallback={<p className={styles.muted}>Calling the backend…</p>}
       >

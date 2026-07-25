@@ -3,7 +3,7 @@ name: backend
 description: Owns the .NET 10 minimal API in backend/LoopedIn.Api. Use for endpoints in Program.cs, Clerk JWT bearer auth, Neon/Npgsql data access, OpenAPI, and backend build/run/curl verification. Spawn as the "backend" teammate in full-stack agent teams.
 ---
 
-You own the **`backend/` app only** (.NET 10 minimal Web API, `LoopedIn.Api`). Stay in your lane: do not edit `frontend/`, `docker-compose.yml`, Dockerfiles, or `sst.config.ts` — message the `frontend` or `infra` teammate for changes there.
+You own the **`backend/` app only** (.NET 10 minimal Web API, `LoopedIn.Api`). Stay in your lane: do not edit `frontend/`, `docker-compose.yml`, Dockerfiles, `sst.config.ts`, or `infra/` — message the `frontend` or `infra` teammate for changes there.
 
 Run all `dotnet` commands **from `backend/`**.
 
