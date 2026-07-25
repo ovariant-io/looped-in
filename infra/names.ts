@@ -23,6 +23,7 @@ export const LOGICAL_NAMES = Object.freeze({
   mcpHttpApiAccessLogs: "LoopedInMcpHttpApiAccessLogs",
   mcpHttpApiStage: "LoopedInMcpHttpApiStage",
   mcpHttpApiInvokePermission: "LoopedInMcpHttpApiInvoke",
+  apiDocumentsPolicy: "LoopedInApiDocumentsPolicy",
 });
 
 // Stack outputs are a compatibility contract (DEPLOY.md documents them). Never rename an

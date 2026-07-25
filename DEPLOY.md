@@ -22,7 +22,7 @@ others are torn down completely.
 | **API edge** | API Gateway **HTTP API** (`$default` stage + route) — throttled, access-logged, CORS | pay-per-request |
 | **MCP server** (`mcp/`) | Python 3.13 Lambda (zip, arm64, Mangum) — the Clerk-authenticated agent surface | scales to zero |
 | **MCP edge** | A **second** API Gateway HTTP API, same shape as the API's | pay-per-request |
-| **Storage** | Private S3 bucket (`infra/storage/bucket.ts`) — **not wired to any code yet** | $0 while empty |
+| **Storage** | Private S3 bucket (`infra/storage/bucket.ts`) — the document store behind `/documents` | pay-per-GB stored/transferred |
 | **Cost guard** | AWS Budgets alarm (default $10/mo, emails at 50% actual / 100% forecast) | free |
 | Postgres | **Neon** — external, not on the AWS bill | — |
 | Auth | **Clerk** — external, not on the AWS bill | — |
@@ -74,6 +74,31 @@ committed). The stable Clerk route URLs (`/sign-in`, `/sign-up`) are set in
 
 **The MCP server adds no secret.** It reuses `ClerkAuthority` as its `CLERK_ISSUER`, and DCR
 means there is no OAuth client secret to store. `mcp/.env.local` is for local dev only.
+
+**Document storage adds no secret either.** A bucket name and a key prefix aren't sensitive, so
+`Documents__Bucket` / `Documents__Prefix` are passed to the API Lambda as plain environment
+variables wired directly from the bucket resource (`infra/services/api.ts`). AWS credentials come
+from the function's execution role, so there are no AWS keys anywhere in this stack's config.
+
+## Documents and S3
+
+`/documents` stores files under `documents/{clerkUserId}/{documentId}/{filename}` in the stack's
+bucket. Bytes go **directly between the browser and S3** over presigned URLs — the API mints them
+but never carries the payload, which is what keeps uploads clear of API Gateway's 10 MB request
+cap and Lambda's payload limit.
+
+Two consequences for the infra:
+
+- **The API Lambda's role gets a scoped grant, not blanket S3 access** — `s3:GetObject`,
+  `s3:PutObject`, and `s3:DeleteObject` on `{bucket}/documents/*`, plus `s3:ListBucket` on the
+  bucket with an `s3:prefix` condition (listing is a bucket-level action, so a resource ARN can't
+  narrow it). See `grantDocumentsAccess` in `infra/shared/iam.ts`. Presigned URLs inherit *this
+  role's* permissions when redeemed, so the prefix scope holds even for direct browser uploads.
+- **The bucket now has CORS**, because a browser PUT to S3 is a cross-origin request. It reads the
+  same `corsAllowOrigins` stage list as the API gateway, so a stage names its browser origins in
+  one place — and the prod guard below now protects the bucket as well as the API. A wildcard is
+  safe on non-prod here specifically because the presigned URL *is* the capability: CORS decides
+  which page may issue the request, not who may read the bucket, and no credentials are sent.
 
 ## One-time setup
 

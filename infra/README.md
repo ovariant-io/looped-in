@@ -24,7 +24,9 @@ CloudFront + S3 (OpenNext)     API Gateway HTTP API #1 ($default stage)
                                          │  public internet, TLS
                                    Neon Postgres · Clerk JWKS
 
-S3 storage bucket (private)  ← standalone: no consumer, no IAM grant, no env var yet
+S3 documents bucket (private) ← presigned PUT/GET straight from the browser
+        ▲                        scoped grant: documents/* only
+        └──────────────────────── API Lambda mints the presigned URLs
 ```
 
 Neither Lambda has a **Function URL** — API Gateway is the only invoke path for each, granted
@@ -37,9 +39,16 @@ The web service depends on the MCP gateway (it renders the connector URL at `/co
 MCP service depends on the API gateway (it forwards tokens there) — hence the order in
 `index.ts`. No cycle: the MCP server never calls the web app.
 
-The storage bucket (`storage/bucket.ts`) is deliberately disconnected from that graph:
-nothing in either app can reach it until someone grants the API Lambda's role scoped `s3:`
-actions on its ARN and passes `bucket.name` into the function environment.
+The storage bucket (`storage/bucket.ts`) backs `/documents`. It is created **before** the API,
+which receives `bucket.name` as `Documents__Bucket`; the API's role gets named actions on the
+`documents/*` prefix only (`grantDocumentsAccess` in `shared/iam.ts`). Declaration order in
+`index.ts` is presentational — Pulumi derives URNs from `names.ts`, so moving the call changed no
+resource identity.
+
+Uploads and downloads never traverse the API: it presigns a URL and the browser talks to S3
+directly. That is why the bucket carries a CORS config (a browser PUT to S3 is cross-origin) and
+why the scoped IAM grant still matters — S3 evaluates the **signing role's** permissions when a
+presigned URL is redeemed, so `documents/*` bounds direct browser access too.
 
 ## Ownership
 
@@ -55,9 +64,9 @@ actions on its ARN and passes `bucket.name` into the function environment.
 | MCP Lambda (Clerk issuer, backend URL) | `services/mcp.ts` |
 | MCP HTTP API edge (route, throttle, MCP-specific CORS, access logs) | `services/mcp-gateway.ts` |
 | Next.js (OpenNext) frontend | `services/web.ts` |
-| General-purpose S3 bucket (private, unwired) | `storage/bucket.ts` |
+| Documents S3 bucket (private, browser-upload CORS) + the shared `DOCUMENTS_PREFIX` | `storage/bucket.ts` |
 | Budget alarm | `operations/budget.ts` |
-| IAM primitives | `shared/iam.ts` |
+| IAM primitives (execution roles, the scoped documents grant) | `shared/iam.ts` |
 | Invariant pieces shared by both HTTP API edges (access-log format, URL tidy) | `shared/http-api.ts` |
 | Frozen logical names + output contract | `names.ts` |
 | Stable output assembly | `index.ts` |

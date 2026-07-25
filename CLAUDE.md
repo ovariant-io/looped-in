@@ -24,7 +24,7 @@ DEPLOY.md            ← what gets deployed, secrets table, one-time setup, tear
 
 Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.dockerignore`, `backend/Dockerfile` + `backend/.dockerignore`, `mcp/Dockerfile` + `mcp/.dockerignore`. `.gitignore`s live per-app (`frontend/.gitignore`, `backend/.gitignore`, `mcp/.gitignore`) except the root one, which covers the infra (`.sst/`, root `node_modules/`, `.open-next/`, the Lambda publish dir).
 
-**The services now talk over Clerk-authenticated calls.** The frontend `/me` page (`app/me/page.tsx`) makes a **server-side** call to the backend's protected `GET /me` using `BACKEND_URL` (the Compose network); `NEXT_PUBLIC_API_URL` remains available for browser-side calls via the host port. See **Authentication (Clerk)** below.
+**The services now talk over Clerk-authenticated calls.** The frontend `/me` page (`app/me/page.tsx`) makes a **server-side** call to the backend's protected `GET /me` using `BACKEND_URL` (the Compose network); `NEXT_PUBLIC_API_URL` remains available for browser-side calls via the host port. See **Authentication (Clerk)** below. The `/documents` page follows the same server-side pattern — see **Documents (S3)**.
 
 ## Commands
 
@@ -77,7 +77,7 @@ There is **no test suite** in any app — verify changes by building and running
 ## Stack
 
 - **Frontend:** Next.js **16.2.9** + React **19**, TypeScript, **App Router** (`app/`), no `src/` dir, **no Tailwind**, import alias `@/*`. `next.config.ts` sets `output: "standalone"` so the Docker image ships a trimmed `node_modules` + `server.js`. Auth via **Clerk** (`@clerk/nextjs`) — see Authentication below.
-- **Backend:** .NET **10** (`net10.0`) **minimal API** in `backend/LoopedIn.Api/Program.cs` (`GET /` hello + `GET /weatherforecast`). OpenAPI via `Microsoft.AspNetCore.OpenApi` (no Swashbuckle); `Nullable` + `ImplicitUsings` enabled. Requires the **.NET 10 SDK** (installed here via Homebrew → `/opt/homebrew/bin/dotnet`). Protected endpoints are guarded by **Clerk JWT Bearer** auth — see Authentication below.
+- **Backend:** .NET **10** (`net10.0`) **minimal API** in `backend/LoopedIn.Api/Program.cs` (`GET /` hello + the three `*/ping` configuration checks + protected `GET /me`), with document CRUD mapped from `Endpoints/DocumentEndpoints.cs`. OpenAPI via `Microsoft.AspNetCore.OpenApi` (no Swashbuckle); `Nullable` + `ImplicitUsings` + `TreatWarningsAsErrors` enabled, packages centrally versioned in `Directory.Packages.props`. Requires the **.NET 10 SDK** (installed here via Homebrew → `/opt/homebrew/bin/dotnet`). Protected endpoints are guarded by **Clerk JWT Bearer** auth — see Authentication below.
 - **MCP:** Python **3.13** + **FastMCP 3.x** in `mcp/looped_in_mcp/` (`config`/`auth`/`middleware`/`backend`/`deps`/`app` + `tools/`), served over streamable HTTP at `/mcp`. Clerk is the OAuth **authorization server** via Dynamic Client Registration; this server is a **resource server** (`RemoteAuthProvider` + `JWTVerifier`). Runs under uvicorn locally and **Mangum** on Lambda — `server.py` is the only file that knows the difference. See `mcp/README.md`.
 - **Containers:** multi-stage Dockerfiles, all three final images run **non-root**. Backend listens on `8080` inside the container (`ASPNETCORE_HTTP_PORTS`); host maps it to `5114`. MCP listens on `8000` in both.
 
@@ -87,6 +87,20 @@ The backend talks to **Neon** (serverless Postgres) via **Npgsql** (a pooled `Np
 
 - `DATABASE_URL` accepts **either** Neon's `postgresql://…` URL **or** a native Npgsql key/value string; `DbBootstrap.ToNpgsqlConnectionString` in `Program.cs` normalizes the URL form (and honors `?sslmode=`, defaulting to `Require` since Neon requires TLS).
 - **`GET /db/ping`** is the connectivity check: runs `SELECT version(), now()` → `{ connected, version, serverTime }`. It returns **503** with a clear message when `DATABASE_URL` is unset, so the rest of the API runs fine with no DB configured.
+
+## Documents (S3)
+
+`/documents` is full CRUD over documents stored in the stack's S3 bucket. **Bytes never pass through the API**: it mints short-lived presigned URLs and the browser transfers directly to and from S3, which keeps uploads clear of the 10 MB API Gateway request cap and the Lambda payload limit.
+
+- **Key layout is `documents/{clerkUserId}/{documentId}/{urlEncodedFilename}`** — built and parsed only by `Infrastructure/Storage/DocumentKey.cs`. The owner segment always comes from the validated token's `sub`, never from the request; a client sends a document **id**, never a key, so no request shape reaches another user's objects. Ids are **UUIDv7**, so S3's lexicographic listing order is chronological.
+- **The filename lives in the key**, not just in `x-amz-meta-*`, because `ListObjectsV2` returns keys/sizes/timestamps but never user metadata — reading names from metadata would cost one `HeadObject` per row. `Uri.EscapeDataString` round-trips the original exactly and can't produce a `/`, so a document is always exactly one object.
+- **There is no database table.** S3 is the whole source of truth, so documents work with `DATABASE_URL` unset.
+- **Endpoints** (`Endpoints/DocumentEndpoints.cs`, all `.RequireAuthorization()` except ping): `GET /documents/ping` (public, mirrors `/db/ping`), `GET /documents`, `POST /documents` (→ presigned PUT), `POST /documents/{id}/complete`, `GET /documents/{id}`, `GET /documents/{id}/content` (→ presigned GET), `PATCH /documents/{id}` (rename), `DELETE /documents/{id}`.
+- **Upload is three steps**: `POST /documents` → PUT the bytes to `uploadUrl` sending `requiredHeaders` **verbatim** (they're part of the signature, so a changed or missing header means a 403 from S3) → `POST /documents/{id}/complete`. Nothing exists in S3 until the PUT lands, so an abandoned upload leaves no debris.
+- **Rename is copy-then-delete** — the filename is in the key, so there's no in-place edit. The id is preserved.
+- **Config:** `Documents__Bucket` (required) and `Documents__Prefix` (default `documents/`). Unset → the app still boots and `/documents` reports **503** with the reason, like the DB and Clerk wiring. Credentials/region come from the standard AWS chain (`AWS_REGION`, env, `~/.aws`, and on Lambda the execution role) — **the API holds no AWS keys in configuration**.
+- **The bucket's CORS is a separate layer from the gateway's.** The gateway's governs calls to the API; the bucket's governs the browser's direct PUT to S3. Both read `STAGE_CONFIG.corsAllowOrigins`, so a stage names its browser origins once — and the existing prod guard now covers the bucket too. A local dev bucket you create by hand needs a PUT rule for `http://localhost:3000`.
+- **Frontend** (`app/documents/`): `types.ts` (shared shapes, no server imports, so the client component can use them), `api.ts` (server-side authenticated fetch over `BACKEND_URL`), `actions.ts` (`"use server"`), `document-manager.tsx` (client). The manager renders **straight from props** — mutating actions call `refresh()` from `next/cache` and new props arrive; a local `useState` mirror would go stale on every rename or delete.
 
 ## Authentication (Clerk)
 
@@ -104,7 +118,7 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 
 **Endpoints:**
 - **`GET /auth/ping`** (public) — connectivity check mirroring `/db/ping`: reuses the JwtBearer handler's own `ConfigurationManager` to fetch Clerk's OIDC discovery → `{ configured, authority, issuer, jwksUri, signingKeys }`; **503** when `Clerk:Authority` is unset.
-- **`GET /me`** (protected, `.RequireAuthorization()`) — returns `{ userId, email, claims }` from the validated token; **401** without a valid bearer. `/`, `/db/ping`, `/weatherforecast` stay public.
+- **`GET /me`** (protected, `.RequireAuthorization()`) — returns `{ userId, email, claims }` from the validated token; **401** without a valid bearer. `/` and the `*/ping` checks stay public.
 
 **MCP** (`mcp/looped_in_mcp/auth.py`):
 - Reads **`CLERK_ISSUER`** — the same Clerk Frontend API URL the backend uses as `Clerk__Authority`. That shared issuer is what lets an MCP tool forward the caller's token straight to the API. In the cloud it comes from the `ClerkAuthority` SST secret; locally from `mcp/.env.local`.
@@ -125,7 +139,9 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 - **`MCP_URL` is not `NEXT_PUBLIC_`.** `NEXT_PUBLIC_*` values are inlined at build time; the connector URL only exists after the MCP gateway is created. `app/connect/page.tsx` reads it server-side after `await connection()`, so it resolves per request in Compose and on Lambda alike.
 - **CORS lives on the gateway, not in `Program.cs`.** The .NET app registers no CORS middleware, so exactly one layer emits `Access-Control-Allow-*`. Adding ASP.NET CORS would produce duplicate headers that browsers reject.
 - **`names.ts` is append-only.** Logical names are the identity behind Pulumi URNs — renaming one destroys and recreates that resource. `OUTPUT_KEYS` (`web`, `api`, `bucket`) is a documented contract.
-- **The S3 bucket in `infra/storage/bucket.ts` is intentionally unwired.** Private, TLS-only, no CORS, no versioning; no code reads or writes it and the API Lambda has no `s3:` permission on it. To connect it, grant scoped actions on its ARN in `shared/iam.ts` and pass `bucket.name` into the function env in `services/api.ts` — don't reach for `s3:*`.
+- **The S3 bucket in `infra/storage/bucket.ts` is the document store.** Private, TLS-only, unversioned, with CORS scoped to the stage's browser origins so the direct-to-S3 upload works. The API Lambda's role is granted **named actions on `documents/*` only** (`grantDocumentsAccess` in `shared/iam.ts`) — object actions scoped by ARN, plus `s3:ListBucket` confined by an `s3:prefix` condition, because listing is a bucket-level action a resource ARN can't narrow. Never reach for `s3:*`. Presigned URLs need no extra grant: S3 evaluates *this role's* permissions when the browser redeems one, so the prefix scope still binds.
+- **`DOCUMENTS_PREFIX` in `storage/bucket.ts` is shared** by the IAM grant and the API's `Documents__Prefix` env var, so the permission boundary and the code's idea of where documents live can't drift.
+- **The bucket is created before the API** in `index.ts` because the API needs its name. Ordering there is presentational only — Pulumi derives URNs from `names.ts`, not declaration order.
 - **One secret manifest**, `infra/config/secrets.json`, is read by both `scripts/deploy.mjs` (dotenv → SSM) and `infra/config/secrets.ts` (the `sst.Secret` handles), so the two can't drift.
 - **`prod` fails fast** before touching AWS while `STAGE_CONFIG.prod.corsAllowOrigins` is empty or `"*"`.
 - Deploys are **denied by `.claude/settings.json`** and go through the `deploy` skill deliberately. `npm run infra:check` is the safe local check.

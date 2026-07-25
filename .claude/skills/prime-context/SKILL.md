@@ -21,7 +21,7 @@ Run this before any non-trivial implementation, debugging, or review work so edi
   - backend: `git ls-files backend` — the API is `backend/LoopedIn.Api/` (`Program.cs`, `LoopedIn.Api.csproj`); the solution is `backend/LoopedIn.slnx`.
   - mcp: `git ls-files mcp` — the server is `mcp/looped_in_mcp/` with `server.py` as the entrypoint; tools live in `tools/` and are listed in `tools/registry.py`.
 - **Before writing any Next.js code**, read the relevant guide in `frontend/node_modules/next/dist/docs/` — Next 16 changed conventions from what's in training data (see `frontend/AGENTS.md`).
-- For backend work, read `backend/LoopedIn.Api/Program.cs` (minimal-API endpoint map) and `backend/LoopedIn.Api/LoopedIn.Api.csproj` (target framework / packages) before editing.
+- For backend work, read `backend/LoopedIn.Api/Program.cs` (minimal-API endpoint map) and `backend/LoopedIn.Api/LoopedIn.Api.csproj` (target framework / packages) before editing. Document routes live in `Endpoints/DocumentEndpoints.cs` with the S3 seam in `Infrastructure/Storage/`.
 - For MCP work, read `mcp/README.md` first (auth model, layout, deploy shape), then `looped_in_mcp/app.py` and `tools/registry.py`.
 - When the task spans services or the container setup, read `docker-compose.yml` and the per-app `Dockerfile`s.
 
@@ -53,8 +53,9 @@ There is **no test suite** in any app. Verification means:
 
 **Backend** (from `backend/`):
 - `dotnet build LoopedIn.slnx` — confirms it compiles
-- `dotnet run --project LoopedIn.Api --launch-profile http` then `curl http://localhost:5114/` (and `/weatherforecast`, `/openapi/v1.json`)
+- `dotnet run --project LoopedIn.Api --launch-profile http` then `curl http://localhost:5114/` (and `/openapi/v1.json`)
 - `curl http://localhost:5114/db/ping` — Neon connectivity (`SELECT version()`); needs `DATABASE_URL` in `backend/.env.local`, else returns a 503 "not configured"
+- `curl http://localhost:5114/documents/ping` — S3 document storage; needs `Documents__Bucket` (and a resolvable `AWS_REGION`) in `backend/.env.local`, else returns a 503 naming what's missing
 
 **MCP** (from `mcp/`, after `uv venv --python 3.13 .venv && uv pip install --python .venv/bin/python -r requirements.txt`):
 - `.venv/bin/python server.py` (needs `CLERK_ISSUER`), then `curl http://localhost:8000/health` → `ok`

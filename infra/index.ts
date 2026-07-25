@@ -9,8 +9,8 @@ import { createApiGateway } from "./services/gateway";
 import { createMcpService } from "./services/mcp";
 import { createMcpGateway } from "./services/mcp-gateway";
 import { createWebService } from "./services/web";
-import { createLambdaExecutionRole } from "./shared/iam";
-import { createStorageBucket } from "./storage/bucket";
+import { createLambdaExecutionRole, grantDocumentsAccess } from "./shared/iam";
+import { createStorageBucket, DOCUMENTS_PREFIX } from "./storage/bucket";
 
 interface ComposeInfrastructureOptions {
   readonly repoRoot: string;
@@ -37,10 +37,23 @@ export function composeInfrastructure(
     LOGICAL_NAMES.lambdaRoleLogs,
   );
 
+  // The document store now precedes the API, which needs its name at creation time. Ordering is
+  // presentational only — Pulumi derives URNs from the logical names in names.ts, not from
+  // declaration order — so moving this did not touch any existing resource's identity.
+  const storage = createStorageBucket({ settings });
+  grantDocumentsAccess(
+    LOGICAL_NAMES.apiDocumentsPolicy,
+    role,
+    storage.bucket.arn,
+    DOCUMENTS_PREFIX,
+  );
+
   const api = createApiService({
     artifactDir: artifacts.apiDir,
     secrets,
     role,
+    documentsBucket: storage.bucket.name,
+    documentsPrefix: DOCUMENTS_PREFIX,
   });
   const gateway = createApiGateway({ settings, apiLambda: api.lambda });
 
@@ -65,15 +78,13 @@ export function composeInfrastructure(
     apiBaseUrl: gateway.baseUrl,
     mcpConnectorUrl: mcpGateway.connectorUrl,
   });
-  // Standalone by design: nothing above depends on the bucket yet (see storage/bucket.ts).
-  const storage = createStorageBucket({ settings });
   createBudget(settings);
 
   return {
     web: web.web.url,
     // The API Gateway HTTP API endpoint — the only public way into the API Lambda.
     api: gateway.baseUrl,
-    // Auto-generated S3 bucket name — the only handle operators have on an unwired bucket.
+    // Auto-generated S3 bucket name — the document store behind /documents.
     bucket: storage.bucket.name,
     // The URL to paste into an MCP client as a custom connector (the /connect page shows it
     // too, for people who never see stack outputs).

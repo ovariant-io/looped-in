@@ -1,0 +1,237 @@
+.main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+.title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -1px;
+}
+
+.intro {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 65%, transparent);
+  line-height: 1.6;
+}
+
+.intro code,
+.card code,
+.hint code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.muted {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.error {
+  border-color: color-mix(in srgb, #dc2626 40%, transparent);
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+}
+
+.manager {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.uploader {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent);
+  background: color-mix(in srgb, var(--foreground) 2%, transparent);
+  align-items: flex-start;
+}
+
+/* The real input is driven by the styled button; hiding it with display:none would take it
+   out of the accessibility tree, so it is clipped instead. */
+.fileInput {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.primaryButton {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--foreground);
+  color: var(--background);
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.primaryButton:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.primaryButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.uploaderHint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+.status {
+  margin: 0;
+  font-size: 0.9rem;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 12%, transparent);
+  background: color-mix(in srgb, var(--foreground) 3%, transparent);
+}
+
+.itemMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1 1 240px;
+}
+
+.filename {
+  font-size: 0.95rem;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.detail {
+  font-size: 0.78rem;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+  font-variant-numeric: tabular-nums;
+}
+
+.itemActions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.smallButton {
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 6px 12px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 18%, transparent);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.smallButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+}
+
+.smallButton:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.danger {
+  color: #dc2626;
+  border-color: color-mix(in srgb, #dc2626 35%, transparent);
+}
+
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+}
+
+.renameForm {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.renameInput {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 7px 10px;
+  border-radius: 7px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 25%, transparent);
+  background: var(--background);
+  color: inherit;
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.renameInput:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 45%, transparent);
+  outline-offset: 1px;
+}

@@ -1,8 +1,9 @@
 using System.Security.Claims;
 using Amazon.Lambda.AspNetCoreServer.Hosting;
+using LoopedIn.Api.Endpoints;
 using LoopedIn.Api.Infrastructure.Authentication;
 using LoopedIn.Api.Infrastructure.Database;
-using LoopedIn.Api.Models;
+using LoopedIn.Api.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -32,6 +33,10 @@ builder.Services.AddNeonDatabase(Environment.GetEnvironmentVariable("DATABASE_UR
 // No-ops gracefully when Clerk:Authority is unset: the app still boots, but protected
 // endpoints reject all requests until it is configured.
 builder.Services.AddClerkAuthentication(builder.Configuration);
+
+// S3-backed document storage. Degrades the same way as the two above: without Documents:Bucket
+// the app still boots and the /documents endpoints report 503 with the reason.
+builder.Services.AddDocumentStorage(builder.Configuration);
 
 var app = builder.Build();
 
@@ -122,25 +127,6 @@ app.MapGet("/auth/ping", async (
 })
 .WithName("AuthPing");
 
-var summaries = new[]
-{
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
-
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
-
 // Protected endpoint: requires a valid Clerk session JWT. Returns the Clerk user id (sub)
 // plus any readily available claims. Returns 401 without a valid token.
 app.MapGet("/me", (ClaimsPrincipal user) =>
@@ -157,5 +143,10 @@ app.MapGet("/me", (ClaimsPrincipal user) =>
 })
 .RequireAuthorization()
 .WithName("GetMe");
+
+// Document CRUD over S3 (GET/POST /documents, …). Mapped from its own module rather than
+// inline: it is eight routes with real request/response shapes, and keeping them together
+// makes the tenancy rule — every key derives from the caller's token — reviewable in one place.
+app.MapDocumentEndpoints();
 
 app.Run();

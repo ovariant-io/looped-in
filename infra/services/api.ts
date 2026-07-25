@@ -5,6 +5,8 @@ interface ApiServiceOptions {
   readonly artifactDir: string;
   readonly secrets: InfrastructureSecrets;
   readonly role: aws.iam.Role;
+  readonly documentsBucket: $util.Input<string>;
+  readonly documentsPrefix: string;
 }
 
 // The .NET 10 API on the managed `dotnet10` Lambda runtime. It is invoked ONLY through the
@@ -29,6 +31,13 @@ export function createApiService(options: ApiServiceOptions) {
         DATABASE_URL: options.secrets.databaseUrl.value,
         Clerk__Authority: options.secrets.clerkAuthority.value,
         Clerk__AuthorizedParties: options.secrets.clerkAuthorizedParties.value,
+        // Document storage. Not secrets — a bucket name and a key prefix — so they are plain
+        // env vars rather than SSM entries. The double underscore is ASP.NET's separator for a
+        // nested configuration key, so these bind to Documents:Bucket / Documents:Prefix.
+        // AWS_REGION and the role credentials are injected by the Lambda runtime itself, which
+        // is the whole credential story here: the API holds no AWS keys.
+        Documents__Bucket: options.documentsBucket,
+        Documents__Prefix: options.documentsPrefix,
       },
     },
   });

@@ -8,11 +8,19 @@ services:
     ports:
       - "5114:8080" # host:container
     env_file:
-      - path: ./backend/.env.local # holds DATABASE_URL (Neon); gitignored
+      # DATABASE_URL (Neon), Clerk__Authority, and the document-storage settings
+      # (Documents__Bucket + AWS_REGION and credentials). Gitignored; see .env.local.example.
+      - path: ./backend/.env.local
         required: false
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_HTTP_PORTS: "8080"
+    # The container cannot see the host's ~/.aws, so S3 credentials have to arrive some other
+    # way. Putting AWS_REGION + AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY in backend/.env.local is
+    # the simplest. To use a host profile instead, uncomment this — the runtime image runs as the
+    # `app` user, whose home is /home/app — and set AWS_PROFILE in .env.local:
+    # volumes:
+    #   - ~/.aws:/home/app/.aws:ro
     restart: unless-stopped
 
   frontend:
