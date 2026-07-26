@@ -1,12 +1,62 @@
+/*
+ * Looped In design tokens.
+ *
+ * The palette and type scale are lifted from the Looped In brand site
+ * (looped-in.com.au), whose Squarespace theme defines them in HSL:
+ *
+ *   "white"       hsl(48, 24%, 84%)   → #e0dccc  warm cream (the page ground; not white)
+ *   "black"       hsl(6, 100%, 0%)    → #000000  ink
+ *   lightAccent   hsl(192, 49%, 82%)  → #bbdfe8  sky
+ *   darkAccent    hsl(33, 100%, 14%)  → #472700  eggplant
+ *   accent        hsl(225, 39%, 50%)  → #4e67b1  indigo
+ *
+ * Every page styles against --background / --foreground and the --li-* semantic
+ * tokens below, so a route picks the brand up without knowing these hexes. That
+ * is what the dashboard is meant to inherit — add tokens here, not in a route.
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Raw brand colours — fixed. Reach for the semantic tokens below instead. */
+  --li-cream: #e0dccc;
+  --li-ink: #000000;
+  --li-sky: #bbdfe8;
+  --li-eggplant: #472700;
+  --li-indigo: #4e67b1;
+
+  /* Semantic tokens — these flip with the colour scheme. */
+  --background: var(--li-cream);
+  --foreground: var(--li-ink);
+  /* Sky reads as a light tint in both schemes, so it keeps ink on top either way. */
+  --li-accent: var(--li-sky);
+  --li-accent-foreground: var(--li-ink);
+  /* Connector rules carry the "linkage" idea, so they have to read against the
+     ground — sky on cream does not. Indigo is the brand's `accent` and does. */
+  --li-rule: var(--li-indigo);
+  /* Space Mono eyebrows and labels. */
+  --li-meta: var(--li-eggplant);
+  --li-surface: color-mix(in srgb, var(--foreground) 4%, transparent);
+  --li-line: color-mix(in srgb, var(--foreground) 14%, transparent);
+
+  /* Type — the brand site sets headings at .02em tracking over 1.2em leading,
+     body at 0em over 1.3em. Aileron is not on Google Fonts; Geist is the closest
+     neo-grotesque already loaded here, and carries the same Helvetica lineage. */
+  --li-heading-tracking: 0.02em;
+  --li-heading-leading: 1.2;
+  --li-body-leading: 1.55;
+  /* Buttons: uppercase, 700, 6.4px radius — straight off the brand site. */
+  --li-radius-button: 6.4px;
+  --li-radius-panel: 12px;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Warm near-black in the eggplant hue rather than a neutral grey, so the
+       dark scheme still reads as this brand and not as a default inversion. */
+    --background: #1a130a;
+    --foreground: var(--li-cream);
+    --li-meta: var(--li-sky);
+    /* Indigo goes muddy on the warm near-black; sky is the legible rule here. */
+    --li-rule: var(--li-sky);
   }
 }
 
@@ -26,7 +76,8 @@ body {
   flex-direction: column;
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Helvetica, Arial, sans-serif;
+  line-height: var(--li-body-leading);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }

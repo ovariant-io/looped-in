@@ -81,6 +81,24 @@ There is **no test suite** in any app — verify changes by building and running
 - **MCP:** Python **3.13** + **FastMCP 3.x** in `mcp/looped_in_mcp/` (`config`/`auth`/`middleware`/`backend`/`deps`/`app` + `tools/`), served over streamable HTTP at `/mcp`. Clerk is the OAuth **authorization server** via Dynamic Client Registration; this server is a **resource server** (`RemoteAuthProvider` + `JWTVerifier`). Runs under uvicorn locally and **Mangum** on Lambda — `server.py` is the only file that knows the difference. See `mcp/README.md`.
 - **Containers:** multi-stage Dockerfiles, all three final images run **non-root**. Backend listens on `8080` inside the container (`ASPNETCORE_HTTP_PORTS`); host maps it to `5114`. MCP listens on `8000` in both.
 
+## Design system
+
+The visual language comes from the **Looped In brand site, <https://www.looped-in.com.au/>** — a Squarespace site whose theme defines the palette in HSL. `app/globals.css` is the single source of truth in this repo; it records the source values and exposes them as tokens. **Style against the tokens, never against raw hexes** — that is what lets a new surface (the dashboard) inherit the brand for free.
+
+| Brand value | HSL on the site | Hex | Token |
+| --- | --- | --- | --- |
+| "white" — the page ground | `hsl(48, 24%, 84%)` | `#e0dccc` | `--li-cream` → `--background` (light) |
+| "black" | `hsl(6, 100%, 0%)` | `#000000` | `--li-ink` → `--foreground` (light) |
+| lightAccent | `hsl(192, 49%, 82%)` | `#bbdfe8` | `--li-sky` → `--li-accent` |
+| darkAccent | `hsl(33, 100%, 14%)` | `#472700` | `--li-eggplant` → `--li-meta` (light) |
+| accent | `hsl(225, 39%, 50%)` | `#4e67b1` | `--li-indigo` → `--li-rule` (light) |
+
+- **The ground is a warm cream, not white** — `#e0dccc`. Getting this wrong is the fastest way to look off-brand.
+- **Semantic tokens flip with the colour scheme; raw `--li-*` colours don't.** Dark mode uses a warm near-black in the eggplant hue (`#1a130a`) rather than a neutral inversion, and swaps `--li-meta`/`--li-rule` to sky — indigo goes muddy on it, sky is illegible on cream. Other tokens: `--li-surface`, `--li-line`, `--li-accent-foreground`, `--li-radius-button` (6.4px), `--li-radius-panel`, `--li-heading-tracking`, `--li-heading-leading`, `--li-body-leading`.
+- **Type:** headings/body are **Aileron** on the brand site at weight 400 with **positive** `.02em` tracking over 1.2 leading — not the tightened negative tracking a wordmark usually gets. Aileron is not on Google Fonts, so **Geist** (same Helvetica lineage, already loaded) stands in; swapping in self-hosted Aileron via `next/font/local` is a drop-in. Meta/eyebrow text is **Space Mono** (`--font-space-mono`); `--font-geist-mono` stays the *code* face (connector URLs, claim names) so the two monospaces never do the same job.
+- **Buttons:** uppercase, weight 700, `--li-radius-button`, `1rem 1.3rem` padding — straight off the brand site.
+- **`app/page.tsx` is the reference implementation.** The homepage is one screen: hero, a three-node loop (your data → Looped In → your AI tools), two CTAs. Its connector rules are CSS pseudo-elements on `.node + .node`, not markup, so nodes stay equal-width and the rules rotate horizontal→vertical when the row stacks.
+
 ## Database (Neon Postgres)
 
 The backend talks to **Neon** (serverless Postgres) via **Npgsql** (a pooled `NpgsqlDataSource`). The connection string comes from the `DATABASE_URL` environment variable: locally it's loaded from a gitignored **`backend/.env.local`** (via `DotNetEnv`), and in Compose it's passed through `env_file` (optional, so `up` still works without it). `backend/.env.local.example` is the committed template — copy it to `.env.local` and paste your Neon URL.
@@ -109,7 +127,7 @@ Both apps use **Clerk**. The frontend was scaffolded by the Clerk CLI (`clerk in
 
 **Frontend** (`@clerk/nextjs`):
 - `ClerkProvider` wraps the body in `app/layout.tsx` (**inside `<body>`**, not `<html>`). The header shows sign-in/sign-up controls when signed out and a `UserButton` when signed in (`Show` / `SignInButton` / `SignUpButton` / `UserButton`), plus a "My API identity" link to `/me`.
-- **`proxy.ts`** (Next 16 uses `proxy.ts`, **not** `middleware.ts`) protects all non-public routes — so `/` redirects to `/sign-in` when signed out; only the `app/sign-in` and `app/sign-up` routes are public. Its `config.matcher` includes `'/__clerk/:path*'` after `'/(api|trpc)(.*)'`.
+- **`proxy.ts`** (Next 16 uses `proxy.ts`, **not** `middleware.ts`) protects all non-public routes. Public are `/` (the homepage, so signed-out visitors get the front door rather than a bounce), `app/sign-in` and `app/sign-up` — **everything else, including anything added later, is protected by default**. `/` is an exact match, so `/documents`, `/me` and `/connect` stay behind auth. Its `config.matcher` includes `'/__clerk/:path*'` after `'/(api|trpc)(.*)'`.
 - Publishable/secret keys live in gitignored **`frontend/.env.local`** (written by `clerk init`). **Never expose `CLERK_SECRET_KEY` client-side.** `auth()` is **async** — always `await auth()`; import it from `@clerk/nextjs/server` in server code.
 - Dynamic auth UI is wrapped in `<Suspense>`. Note `next.config.ts` currently sets **`cacheComponents: false`** — OpenNext can't resume PPR, so the deployed app would serve only the static shell. The Suspense boundaries are kept so the flag can be flipped back on if the frontend ever moves to Vercel.
 
@@ -180,5 +198,5 @@ Split-pane display (tmux / iTerm2) and the default teammate model are per-machin
 - **.NET 10 uses the new `.slnx` solution format** (XML), not `.sln`. The solution is `backend/LoopedIn.slnx`; reference it (not a `.sln`) in `dotnet sln` / `dotnet build` commands.
 - **OpenAPI is Development-only:** `app.MapOpenApi()` runs only when `ASPNETCORE_ENVIRONMENT=Development`. The doc is served at `/openapi/v1.json` (Compose sets the env to Development, so it's available at http://localhost:5114/openapi/v1.json).
 - **Container HTTPS warning is harmless:** the backend keeps `app.UseHttpsRedirection()`, so in the HTTP-only container it logs `Failed to determine the https port for redirect` once at startup, then serves HTTP normally. (Guard the line if you want it silent.)
-- **Tailwind is not installed** — style with the existing CSS Modules (`app/page.module.css`) and `app/globals.css`.
+- **Tailwind is not installed** — style with CSS Modules plus the design tokens in `app/globals.css` (see **Design system** below).
 - **`.env.local` loads before the host is built:** `DbBootstrap.LoadDotEnvLocal` runs **before** `WebApplication.CreateBuilder` in `Program.cs`, so `.env.local` values land in the process environment before the configuration provider snapshots them. Anything read via `IConfiguration` (e.g. `Clerk:Authority`) depends on this ordering; `DATABASE_URL` is read via `Environment.GetEnvironmentVariable` directly so it's order-independent, but keep the load first.
