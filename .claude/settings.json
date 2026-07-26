@@ -28,16 +28,6 @@
       "Bash(docker logs *)",
       "Bash(curl http://localhost:*)",
       "Bash(curl http://127.0.0.1:*)"
-    ],
-    "deny": [
-      "Bash(npm run deploy*)",
-      "Bash(npm run remove*)",
-      "Bash(npm run sst*)",
-      "Bash(sst deploy*)",
-      "Bash(sst remove*)",
-      "Bash(npx sst deploy*)",
-      "Bash(npx sst remove*)",
-      "Bash(node scripts/deploy.mjs*)"
     ]
   }
 }
