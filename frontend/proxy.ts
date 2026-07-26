@@ -1,6 +1,10 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
-const isPublicRoute = createRouteMatcher(["/sign-in(.*)", "/sign-up(.*)"]);
+// "/" is public so the homepage works as the front door: a signed-out visitor
+// sees the pitch and the Sign in / Sign up controls instead of being bounced
+// straight to /sign-in. It is an exact match — "/documents", "/me" and
+// "/connect" stay protected, and anything added later is protected by default.
+const isPublicRoute = createRouteMatcher(["/", "/sign-in(.*)", "/sign-up(.*)"]);
 
 export default clerkMiddleware(async (auth, request) => {
   if (!isPublicRoute(request)) {

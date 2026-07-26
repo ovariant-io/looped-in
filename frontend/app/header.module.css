@@ -14,10 +14,12 @@
   font-family: var(--font-geist-sans), system-ui, sans-serif;
 }
 
+/* Brand tracking is positive (.02em), not the usual tightened wordmark — that is
+   how the Looped In brand site sets its headings. See globals.css. */
 .brand {
   font-size: 1.125rem;
-  font-weight: 600;
-  letter-spacing: -0.5px;
+  font-weight: 700;
+  letter-spacing: var(--li-heading-tracking);
   color: var(--foreground);
 }
 
@@ -31,11 +33,13 @@
 .button {
   appearance: none;
   font: inherit;
-  font-size: 0.875rem;
-  font-weight: 500;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   line-height: 1;
-  padding: 8px 14px;
-  border-radius: 8px;
+  padding: 10px 14px;
+  border-radius: var(--li-radius-button);
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -76,6 +80,6 @@
 
 /* Reserves the auth-controls space while the dynamic state streams in. */
 .placeholder {
-  width: 132px;
+  width: 150px;
   height: 32px;
 }

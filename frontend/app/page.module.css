@@ -1,23 +1,177 @@
+/*
+ * Home. Deliberately one screen: the brand line, the loop, two ways in.
+ * Colour, tracking and radii all come from the --li-* tokens in globals.css.
+ */
+
 .main {
+  flex: 1;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  padding: clamp(48px, 10vh, 104px) 24px 72px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 100vh;
-  gap: 12px;
-  text-align: center;
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  gap: clamp(48px, 8vh, 80px);
+}
+
+/* ---- hero ---- */
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 680px;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--li-meta);
 }
 
 .title {
   margin: 0;
-  font-size: 3rem;
-  font-weight: 600;
-  letter-spacing: -1.5px;
+  /* Fluid, but anchored to the brand's 1.2 leading and .02em tracking. */
+  font-size: clamp(2.25rem, 6vw, 3.75rem);
+  font-weight: 400;
+  letter-spacing: var(--li-heading-tracking);
+  line-height: var(--li-heading-leading);
+  text-wrap: balance;
 }
 
-.subtitle {
+.lede {
   margin: 0;
-  color: #888;
-  font-size: 1rem;
+  max-width: 34em;
+  font-size: clamp(1rem, 1.6vw, 1.125rem);
+  line-height: var(--li-body-leading);
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+/* ---- the loop ---- */
+
+.loop {
+  display: flex;
+  align-items: stretch;
+  gap: 32px;
+}
+
+.node {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px;
+  border: 1px solid var(--li-line);
+  border-radius: var(--li-radius-panel);
+  background: var(--li-surface);
+}
+
+/* The linkage: a sky rule laid across the gap to the previous node. Absolute
+   against .node, so it costs no markup and no layout space. */
+.node + .node::before {
+  content: "";
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 32px;
+  height: 2px;
+  background: var(--li-rule);
+}
+
+/* Looped In itself is the anchor of the loop, so it carries the accent fill. */
+.anchor {
+  background: var(--li-accent);
+  border-color: var(--li-accent);
+  color: var(--li-accent-foreground);
+}
+
+.nodeStep {
+  margin: 0;
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.nodeTitle {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 400;
+  letter-spacing: var(--li-heading-tracking);
+  line-height: var(--li-heading-leading);
+}
+
+.nodeBody {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: var(--li-body-leading);
+  color: color-mix(in srgb, currentColor 75%, transparent);
+}
+
+/* ---- actions ---- */
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* Brand button spec: uppercase, 700, 6.4px radius, 1rem/1.3rem padding. */
+.primaryAction,
+.secondaryAction {
+  display: inline-block;
+  padding: 1rem 1.3rem;
+  border-radius: var(--li-radius-button);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.primaryAction {
+  background: var(--foreground);
+  border: 1px solid var(--foreground);
+  color: var(--background);
+}
+
+.primaryAction:hover {
+  opacity: 0.85;
+}
+
+.secondaryAction {
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--foreground) 30%, transparent);
+  color: var(--foreground);
+}
+
+.secondaryAction:hover {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+}
+
+/* ---- stacked ---- */
+
+@media (max-width: 760px) {
+  .loop {
+    flex-direction: column;
+  }
+
+  /* Same rule, rotated into the vertical gap. */
+  .node + .node::before {
+    right: auto;
+    left: 32px;
+    top: auto;
+    bottom: 100%;
+    width: 2px;
+    height: 32px;
+  }
 }

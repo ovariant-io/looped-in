@@ -1,7 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Space_Mono } from "next/font/google";
 import Link from "next/link";
 import { Suspense } from "react";
 import "./globals.css";
@@ -15,6 +15,16 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
+  subsets: ["latin"],
+});
+
+// The brand site sets its meta/label font to Space Mono. It carries the eyebrows
+// and small caps labels; Geist Mono stays the *code* face (connector URLs, claim
+// names), so the two monospaces are never doing the same job.
+// Not a variable font, so the weights have to be named.
+const spaceMono = Space_Mono({
+  variable: "--font-space-mono",
+  weight: ["400", "700"],
   subsets: ["latin"],
 });
 
@@ -40,7 +50,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
+    <html
+      lang="en"
+      className={`${geistSans.variable} ${geistMono.variable} ${spaceMono.variable}`}
+    >
       <body>
         <ClerkProvider>
           <header className={styles.header}>
