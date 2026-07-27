@@ -1,0 +1,137 @@
+/* The dashboard home. Matches the other pages' shape — a centred column with its own
+   max-width — because the shell deliberately adds no padding of its own. */
+
+.main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  font-family: var(--font-geist-sans), Helvetica, Arial, sans-serif;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.eyebrow {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--li-meta);
+}
+
+.title {
+  font-size: clamp(1.75rem, 4vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: var(--li-heading-tracking);
+  line-height: var(--li-heading-leading);
+}
+
+.intro {
+  max-width: 62ch;
+  color: color-mix(in srgb, var(--foreground) 76%, transparent);
+}
+
+/* auto-fit rather than a fixed count, so the row reflows to 3 / 2 / 1 without breakpoints. */
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  border: 1px solid var(--li-line);
+  border-radius: var(--li-radius-tile);
+  background: var(--li-surface);
+  /* Holds the row steady while the Suspense boundaries resolve at different times. */
+  min-height: 168px;
+}
+
+.tileLabel {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--li-meta);
+}
+
+.tileValue {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: var(--li-heading-tracking);
+  line-height: 1.1;
+}
+
+.tileNote {
+  font-size: 0.8125rem;
+  color: color-mix(in srgb, var(--foreground) 68%, transparent);
+}
+
+.tileLink {
+  margin-top: auto;
+  padding-top: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--li-rule);
+}
+
+.tileLink:hover {
+  text-decoration: underline;
+}
+
+.tileLink:focus-visible {
+  outline: 2px solid var(--li-rule);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* A tile whose dependency could not answer. Muted rather than alarming — an unconfigured
+   backend is the normal state of a fresh checkout, not an incident. */
+.tileProblem {
+  border-style: dashed;
+}
+
+.tileProblemText {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 66%, transparent);
+}
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 1.75rem;
+}
+
+.dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--foreground) 30%, transparent);
+}
+
+.dotReady {
+  background: var(--li-rule);
+}
+
+.skeleton {
+  display: block;
+  width: 3.5ch;
+  height: 1em;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+}

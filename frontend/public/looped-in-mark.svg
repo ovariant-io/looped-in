@@ -1,0 +1,24 @@
+<!--
+  The Looped In mark — the two-node link that stands in for the "OO" of LOOPED-IN.
+
+  Reconstructed from the official lockup (looped-in-logo.png) rather than traced, because
+  the construction resolves to exact numbers: two nodes of radius 47 with centres 176 apart,
+  bridged by a concave fillet of radius 75 that is tangent to both (47 + 75 = 122 = the
+  centre-to-centre distance to each fillet centre, exactly). That gives a waist 19 units tall,
+  which is what the artwork measures. Rebuilt this way it is resolution-free and the fill can
+  be driven from CSS — the raster lockup can do neither.
+
+  The indigo is the brand `accent` (#4e67b1 in globals.css); the artwork ships it as #4f67b1,
+  one digit off, so the token is what's authoritative here.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 271 94" role="img" aria-label="Looped In">
+  <title>Looped In</title>
+  <path
+    fill="#4e67b1"
+    d="M 80.9 14.45
+       A 75 75 0 0 0 189.1 14.45
+       A 47 47 0 1 1 189.1 79.55
+       A 75 75 0 0 0 80.9 79.55
+       A 47 47 0 1 1 80.9 14.45
+       Z" />
+</svg>

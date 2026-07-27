@@ -1,0 +1,7 @@
+/* The lockup is 1249×186 (6.72:1). Callers set the width; height follows, so the
+   aspect ratio can never be set wrong at a call site. */
+.logo {
+  display: block;
+  width: var(--logo-width, 150px);
+  height: auto;
+}

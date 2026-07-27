@@ -46,6 +46,15 @@
   /* Buttons: uppercase, 700, 6.4px radius — straight off the brand site. */
   --li-radius-button: 6.4px;
   --li-radius-panel: 12px;
+
+  /* Application shell — the signed-in chrome (app/(app)/app-shell.tsx).
+     The rail sits a shade off the page ground so the sidebar reads as chrome and
+     the content area reads as canvas, without introducing a second background
+     colour that would have to be re-picked for the dark scheme. */
+  --li-sidebar-width: 248px;
+  --li-header-height: 64px;
+  --li-rail: color-mix(in srgb, var(--foreground) 3%, var(--background));
+  --li-radius-tile: 14px;
 }
 
 @media (prefers-color-scheme: dark) {
