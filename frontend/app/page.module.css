@@ -2,30 +2,45 @@
  * The signed-out landing screen. Stand-alone: it owns the full viewport rather than
  * sitting inside the app's chrome, so the measurements here are all viewport-relative.
  * Colour, tracking and radii all come from the --li-* tokens in globals.css.
+ *
+ * One centred column — brand, scene, the two ways in. It carries no pitch copy (this is a
+ * private tool, not a product page), so there is no second column to balance the scene
+ * against and a split layout would just be a small block beside a large one.
  */
 
 .main {
   min-height: 100vh;
   min-height: 100dvh;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
-  align-items: center;
-  gap: clamp(24px, 5vw, 64px);
-  max-width: 1180px;
-  margin: 0 auto;
-  padding: clamp(32px, 6vh, 72px) clamp(20px, 5vw, 48px);
-}
-
-.copy {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 20px;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3vh, 32px);
+  /* `body` is itself a column flex container, and an `auto` cross-axis margin switches off
+     the stretch a flex item would otherwise get — without this the page shrink-to-fits to
+     its widest child (the lockup) and the scene is handed a ~300px stage to frame itself in. */
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: clamp(32px, 6vh, 72px) clamp(20px, 5vw, 48px);
+  text-align: center;
+}
+
+.head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The lockup is the page's <h1>; the heading contributes semantics, not type styling. */
+.brand {
+  font-size: 0;
+  line-height: 0;
 }
 
 .logo {
-  --logo-width: clamp(190px, 22vw, 260px);
-  margin-bottom: 4px;
+  --logo-width: clamp(210px, 26vw, 300px);
 }
 
 .eyebrow {
@@ -37,26 +52,17 @@
   color: var(--li-meta);
 }
 
-.title {
-  font-size: clamp(2.1rem, 5.2vw, 3.4rem);
-  font-weight: 700;
-  letter-spacing: var(--li-heading-tracking);
-  line-height: var(--li-heading-leading);
-  text-wrap: balance;
-}
-
-.lede {
-  max-width: 46ch;
-  font-size: clamp(1rem, 1.5vw, 1.125rem);
-  line-height: var(--li-body-leading);
-  color: color-mix(in srgb, var(--foreground) 78%, transparent);
+/* The scene is the centrepiece now, so it gets the full column width to work in. */
+.scene {
+  width: 100%;
+  min-width: 0;
 }
 
 .actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
-  margin-top: 8px;
 }
 
 /* Uppercase, 700, 6.4px radius, 1rem/1.3rem padding — straight off the brand site. */
@@ -100,22 +106,4 @@
 .button:focus-visible {
   outline: 2px solid var(--li-rule);
   outline-offset: 2px;
-}
-
-.scene {
-  min-width: 0;
-}
-
-/* Stack below the two-column breakpoint: copy first, then the scene. The scene keeps its
-   own clamped height (loop-scene.module.css), so the screen stays one scroll at most. */
-@media (max-width: 900px) {
-  .main {
-    grid-template-columns: minmax(0, 1fr);
-    align-content: center;
-    gap: 8px;
-  }
-
-  .lede {
-    max-width: none;
-  }
 }

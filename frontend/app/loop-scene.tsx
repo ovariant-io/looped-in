@@ -164,8 +164,16 @@ export function LoopScene() {
       // Sized so the ring plus its labels stay inside the frame at the narrowest column the
       // landing page gives this scene — the nodes clipped at the edges when it was wider.
       const ORBIT_RADIUS = 2.75;
-      /** World-space lift from a node's centre to its label, clear of the 0.3 sphere. */
-      const LABEL_LIFT = 0.62;
+      /**
+       * Labels are anchored *outward along their own spoke* rather than lifted straight up.
+       * Every node sits on a ring around the origin, so pushing radially moves a label away
+       * from its own sphere, away from the mark in the middle, and away from its neighbours,
+       * all at once — and it cannot be pushed off the top of the frame the way a vertical
+       * lift can when a node swings high and near the camera. The small rise is only to
+       * clear the link geometry.
+       */
+      const LABEL_PUSH = 1.19;
+      const LABEL_RISE = 0.26;
       const clientMaterial = new THREE.MeshStandardMaterial({
         color: palette.client,
         metalness: 0.05,
@@ -222,25 +230,71 @@ export function LoopScene() {
       // read per frame: `offsetWidth` forces layout, and the width only changes when the
       // font or the box does.
       const labelHalfWidths: number[] = [];
+      const labelHalfHeights: number[] = [];
       const measureLabels = () => {
         labelRefs.current.forEach((label, index) => {
           labelHalfWidths[index] = label ? label.offsetWidth / 2 : 0;
+          labelHalfHeights[index] = label ? label.offsetHeight / 2 : 0;
         });
       };
+
+      /** Keeps a label's centre far enough inside `extent` that its box is not cut off. */
+      const clampToStage = (value: number, half: number, extent: number) =>
+        Math.min(Math.max(value, half + 2), Math.max(extent - half - 2, half + 2));
+
+      /**
+       * Below this width there is no room to place labels around the ring — "Any MCP client"
+       * alone is over a quarter of a phone's viewport, so projecting it can only end up back
+       * on top of its own node. Under the threshold the labels stay in normal flow as a
+       * caption row under the scene, which is the same fallback used when WebGL never starts.
+       */
+      const PROJECTION_MIN_WIDTH = 560;
+      let projecting = false;
+
+      const setProjecting = (next: boolean) => {
+        if (next === projecting) return;
+        projecting = next;
+        if (next) {
+          labelListRef.current?.setAttribute("data-projected", "true");
+          measureLabels(); // widths differ once the labels are out of flow
+        } else {
+          labelListRef.current?.removeAttribute("data-projected");
+          labelRefs.current.forEach((label) => {
+            if (!label) return;
+            label.style.transform = "";
+            label.style.opacity = "";
+          });
+        }
+      };
+
+      // Half-extents of everything that must stay in frame: the orbit radius plus a node,
+      // and the ring's vertical projection once tilted. Framing is solved from these rather
+      // than from a hand-tuned distance, so the subject fills the stage at any aspect —
+      // fitting on height alone left it marooned in whitespace on a wide, short container,
+      // and fitting on width alone cropped the outer nodes on a phone.
+      // Reach of the label anchors, not of the geometry — they sit further out than the
+      // nodes do, so fitting to the spheres alone would push the labels off the edges.
+      const FIT_HALF_WIDTH = ORBIT_RADIUS * LABEL_PUSH + 0.3;
+      const FIT_HALF_HEIGHT = 1.5;
 
       const resize = () => {
         const rect = mount.getBoundingClientRect();
         const width = Math.max(1, Math.floor(rect.width));
         const height = Math.max(1, Math.floor(rect.height));
         camera.aspect = width / height;
-        // Pull back when the viewport is narrower than it is tall, so the orbit ring stays
-        // inside the frame instead of being cropped at the sides on a phone.
-        camera.position.set(0, 0.75, 8.6 / Math.min(1, camera.aspect * 0.92));
+
+        const halfFov = (camera.fov * Math.PI) / 360;
+        const forHeight = FIT_HALF_HEIGHT / Math.tan(halfFov);
+        const forWidth = FIT_HALF_WIDTH / (Math.tan(halfFov) * camera.aspect);
+        // 1.12 leaves margin for the projected labels, which are fixed pixels and so are
+        // not accounted for by the world-space fit above.
+        camera.position.set(0, 0.75, Math.max(forHeight, forWidth) * 1.12);
         camera.lookAt(0, 0, 0);
         camera.updateProjectionMatrix();
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(width, height, false);
-        measureLabels();
+        setProjecting(width >= PROJECTION_MIN_WIDTH);
+        if (projecting) measureLabels();
       };
       const resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(mount);
@@ -281,26 +335,44 @@ export function LoopScene() {
           spoke.pulse.position.copy(spoke.node.position).multiplyScalar(travel);
 
           // Project the node into the container's coordinates and park the HTML label there.
-          const label = labelRefs.current[index];
+          const label = projecting ? labelRefs.current[index] : null;
           if (label) {
             spoke.node.getWorldPosition(worldPosition);
             // Fade the labels on the far side of the orbit so the ring reads as a ring.
             // Read the depth before projecting — `project` mutates the vector in place.
             const behind = worldPosition.z < -0.6;
-            // Lift the anchor above the node in *world* space rather than nudging the
-            // result in pixels: the offset then shrinks with distance like everything
-            // else in the scene, so a label never drifts onto its sphere as it orbits.
-            worldPosition.y += LABEL_LIFT;
+            // Offset in *world* space rather than nudging the result in pixels, so the gap
+            // shrinks with distance like everything else and a label never drifts onto its
+            // sphere as it orbits.
+            worldPosition.multiplyScalar(LABEL_PUSH);
+            worldPosition.y += LABEL_RISE;
             projected.copy(worldPosition).project(camera);
-            // Keep the label inside the stage. Letting it drift a few pixels off its node
-            // near the edge reads better than letting it be cut in half.
-            const halfWidth = labelHalfWidths[index] ?? 0;
-            const x = Math.min(
-              Math.max((projected.x * 0.5 + 0.5) * rect.width, halfWidth + 2),
-              Math.max(rect.width - halfWidth - 2, halfWidth + 2),
+
+            // Anchor the label on the side of itself that faces the centre, so it grows
+            // outward: a node to the right of centre gets a left-aligned label, one to the
+            // left gets a right-aligned label. Centring every label instead puts half of it
+            // back over its own sphere, which is exactly what the radial push was avoiding.
+            // Nodes near the vertical axis (the top of the ring) stay centred — there is no
+            // "outward" for them, and their clear space is above.
+            const width = (labelHalfWidths[index] ?? 0) * 2;
+            const anchor =
+              projected.x > 0.15 ? 0 : projected.x < -0.15 ? -100 : -50;
+            const bias = (anchor / 100) * width;
+
+            // Clamp the label's own box, then solve back for the transform origin, so the
+            // clamping is correct whichever edge it is anchored by.
+            const rawLeft = (projected.x * 0.5 + 0.5) * rect.width + bias;
+            const left = Math.min(
+              Math.max(rawLeft, 2),
+              Math.max(rect.width - width - 2, 2),
             );
-            const y = (-projected.y * 0.5 + 0.5) * rect.height;
-            label.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%, -50%)`;
+            const x = left - bias;
+            const y = clampToStage(
+              (-projected.y * 0.5 + 0.5) * rect.height,
+              labelHalfHeights[index] ?? 0,
+              rect.height,
+            );
+            label.style.transform = `translate3d(${x}px, ${y}px, 0) translate(${anchor}%, -50%)`;
             label.style.opacity = behind ? "0.35" : "1";
           }
         });
@@ -336,10 +408,6 @@ export function LoopScene() {
         running = false;
         window.cancelAnimationFrame(frameId);
       };
-
-      // From here the labels are placed by `draw`, so they can leave normal flow.
-      labelListRef.current?.setAttribute("data-projected", "true");
-      measureLabels(); // re-measure now they are out of flow, before the first placement
 
       if (motionQuery.matches) {
         // Reduced motion: one composed frame, no animation loop at all.
