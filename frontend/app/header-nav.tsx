@@ -26,6 +26,9 @@ export function HeaderNav({ initialSignedIn }: { initialSignedIn: boolean }) {
     <nav className={styles.nav}>
       {signedIn ? (
         <>
+          <Link href="/clients" className={styles.navLink}>
+            Clients
+          </Link>
           <Link href="/documents" className={styles.navLink}>
             Documents
           </Link>

@@ -13,4 +13,11 @@
     <PackageReference Include="Npgsql" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Migrations travel inside the assembly, so the same files apply under `dotnet run`, in
+         the container, and on Lambda with no content-root assumptions. A wildcard, so adding a
+         migration means adding one .sql file and nothing else. -->
+    <EmbeddedResource Include="Infrastructure/Database/Migrations/*.sql" />
+  </ItemGroup>
+
 </Project>

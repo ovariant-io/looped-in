@@ -4,6 +4,7 @@ using LoopedIn.Api.Endpoints;
 using LoopedIn.Api.Infrastructure.Authentication;
 using LoopedIn.Api.Infrastructure.Database;
 using LoopedIn.Api.Infrastructure.Diagnostics;
+using LoopedIn.Api.Infrastructure.Http;
 using LoopedIn.Api.Infrastructure.Storage;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
@@ -45,6 +46,11 @@ builder.Services.AddSingleton<ProbeCache>();
 
 var app = builder.Build();
 
+// Apply pending schema migrations before serving anything. A no-op when DATABASE_URL is unset,
+// and never fatal: a failure is recorded in DatabaseState, so the app still boots and every
+// database-backed route reports 503 with the reason. See Infrastructure/Database/Migrations/README.md.
+await app.Services.MigrateDatabaseAsync();
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -59,17 +65,20 @@ app.UseAuthorization();
 app.MapGet("/", () => "Hello World from LoopedIn.Api (.NET 10)")
     .WithName("GetHello");
 
-// Connectivity check against Neon Postgres. Returns 503 until DATABASE_URL is set.
+// Connectivity check against Neon Postgres. Returns 503 until DATABASE_URL is set, and — since
+// migrations run at startup — also when the schema could not be migrated, which is the only
+// place that failure is visible from outside the logs.
 // Public, so the result is cached briefly (ProbeCache) — the query is real work an anonymous
 // caller would otherwise be able to repeat as fast as the gateway allows.
 app.MapGet("/db/ping", (IServiceProvider services, ProbeCache probes) =>
     probes.GetOrProbeAsync("db", async () =>
     {
+        var state = services.GetRequiredService<DatabaseState>();
         var dataSource = services.GetService<NpgsqlDataSource>();
-        if (dataSource is null)
+        if (dataSource is null || !state.Available)
         {
             return Results.Problem(
-                "DATABASE_URL is not configured. Set it in backend/.env.local (see .env.local.example).",
+                state.Reason ?? "The database is unavailable.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
@@ -157,7 +166,7 @@ app.MapGet("/auth/ping", async (
 // plus any readily available claims. Returns 401 without a valid token.
 app.MapGet("/me", (ClaimsPrincipal user) =>
 {
-    var userId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
+    var userId = user.GetSubject();
     var email = user.FindFirstValue(ClaimTypes.Email) ?? user.FindFirstValue("email");
 
     return Results.Ok(new
@@ -174,5 +183,9 @@ app.MapGet("/me", (ClaimsPrincipal user) =>
 // inline: it is eight routes with real request/response shapes, and keeping them together
 // makes the tenancy rule — every key derives from the caller's token — reviewable in one place.
 app.MapDocumentEndpoints();
+
+// CRUD over the shared client list in Neon (GET/POST /clients, contacts, …). Unlike documents,
+// these rows belong to the team rather than to a user — see ClientEndpoints for what that costs.
+app.MapClientEndpoints();
 
 app.Run();
