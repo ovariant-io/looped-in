@@ -1,8 +1,8 @@
 /*
  * Looped In design tokens.
  *
- * The palette and type scale are lifted from the Looped In brand site
- * (looped-in.com.au), whose Squarespace theme defines them in HSL:
+ * The token *roles* and the type scale are lifted from the Looped In brand site
+ * (looped-in.com.au), whose Squarespace theme defines its palette in HSL:
  *
  *   "white"       hsl(48, 24%, 84%)   → #e0dccc  warm cream (the page ground; not white)
  *   "black"       hsl(6, 100%, 0%)    → #000000  ink
@@ -10,8 +10,14 @@
  *   darkAccent    hsl(33, 100%, 14%)  → #472700  eggplant
  *   accent        hsl(225, 39%, 50%)  → #4e67b1  indigo
  *
+ * Those are no longer the values that ship. The app now defaults to "Dusk" — twilight
+ * violet and candle amber — made permanent from the colour picker; the brand-site
+ * palette above is still one click away as the picker's "Brand site" preset. Read the
+ * anchor names as roles rather than hues, then: "indigo" is a violet here and
+ * "eggplant" an amber, and only the role still describes what the colour does.
+ *
  * Every page styles against --background / --foreground and the --li-* semantic
- * tokens below, so a route picks the brand up without knowing these hexes. That
+ * tokens below, so a route picks the theme up without knowing these hexes. That
  * is what the dashboard is meant to inherit — add tokens here, not in a route.
  */
 
@@ -22,19 +28,20 @@
      through var() or color-mix(), which is what lets one permutation re-theme the whole
      app without a component knowing. Keep app/lib/palette.ts's DEFAULT_PALETTE in step
      with this block. */
-  --li-cream: #e0dccc;
-  --li-ink: #000000;
-  --li-sky: #bbdfe8;
-  --li-eggplant: #472700;
-  --li-indigo: #4e67b1;
-  /* The dark scheme's ground: a warm near-black in the eggplant hue rather than a
-     neutral inversion, so the dark scheme still reads as this brand. A raw token
+  --li-cream: #e4dee6;
+  --li-ink: #140f1c;
+  --li-sky: #cfc7ee;
+  --li-eggplant: #4a3417;
+  --li-indigo: #6250bf;
+  /* The dark scheme's ground: a near-black carrying the palette's own hue rather than a
+     neutral inversion, so the dark scheme still reads as the same theme. A raw token
      rather than a literal in the media block below, so the picker can drive it. */
-  --li-night: #1a130a;
-  /* The lockup's own wordmark ink, and the landing scene's client nodes on the light
-     ground. Genuinely not --li-eggplant: the Squarespace theme's darkAccent and the
-     logo artwork differ, and this records that rather than papering over it. */
-  --li-plum: #351f40;
+  --li-night: #171325;
+  /* A second dark tone, deliberately not --li-eggplant: the brand lockup inks its
+     wordmark in a plum the Squarespace theme's darkAccent never names, and that
+     distinction is kept as its own anchor. The logo is raster artwork, so it holds the
+     original #351f40 whatever this token becomes. */
+  --li-plum: #3a2b52;
 
   /* Semantic tokens — these flip with the colour scheme. */
   --background: var(--li-cream);
@@ -43,17 +50,17 @@
   --li-accent: var(--li-sky);
   --li-accent-foreground: var(--li-ink);
   /* Connector rules carry the "linkage" idea, so they have to read against the
-     ground — sky on cream does not. Indigo is the brand's `accent` and does. */
+     ground — sky on cream does not. Indigo is the palette's `accent` and does. */
   --li-rule: var(--li-indigo);
   /* Space Mono eyebrows and labels. */
   --li-meta: var(--li-eggplant);
   --li-surface: color-mix(in srgb, var(--foreground) 4%, transparent);
   --li-line: color-mix(in srgb, var(--foreground) 14%, transparent);
-  /* The landing scene (app/loop-scene.tsx) reads these rather than carrying its own copy
-     of the palette. The mark holds indigo in both schemes; the client nodes swap the way
-     --li-rule does, because sky all but vanishes on cream (~1.03:1) and plum goes muddy
-     on the warm near-black. Stating the swap here rather than in the scene is what keeps
-     a WebGL material and a CSS border the same colour by construction. */
+  /* The landing scene (app/loop-scene.tsx) reads --li-scene-mark rather than carrying its
+     own copy of the palette, which is what keeps a WebGL material and the CSS on the same
+     colour by construction. --li-scene-node dates from the scene's client ring and nothing
+     has read it since that ring was removed; it is kept, dark-scheme swap and all, because
+     the picker still exposes plum under that name. */
   --li-scene-mark: var(--li-indigo);
   --li-scene-node: var(--li-plum);
 
@@ -80,16 +87,20 @@
 /*
  * The dark scheme, stated twice on purpose.
  *
- * Normally it follows the OS. The colour picker also has to be able to *pin* a scheme,
- * so the dark half of a permutation can be judged from a light-mode machine — and CSS
- * cannot OR a media query with a selector, so "dark because the OS says so, or dark
- * because the picker pinned it" needs two rules. The media block opts out when the
- * picker has pinned light; the attribute block covers pinned dark.
+ * **Dark is opt-in — it is not what a dark-mode OS gets by default.** The app ships
+ * light: with no data-li-scheme attribute on <html>, which is every first visit and
+ * every no-JS render, neither rule below matches and the :root block above stands.
+ * Following the OS is one of the picker's three choices ("auto"), not the default.
+ *
+ * It takes two rules because CSS cannot OR a media query with a selector, and dark is
+ * reachable two ways: the picker pinned it, or the picker is on auto and the OS asks
+ * for dark. The pin is what lets the dark half of a permutation be judged from a
+ * light-mode machine.
  *
  * Keep the two declaration lists identical.
  */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-li-scheme="light"]) {
+  :root[data-li-scheme="auto"] {
     --background: var(--li-night);
     --foreground: var(--li-cream);
     --li-meta: var(--li-sky);

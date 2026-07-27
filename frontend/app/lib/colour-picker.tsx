@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ANCHORS,
   DEFAULT_PALETTE,
+  DEFAULT_SCHEME,
   PALETTE_EVENT,
   PRESETS,
   SHIPPED_PRESET_ID,
@@ -32,7 +33,8 @@ import styles from "./colour-picker.module.css";
  *
  * - **A scheme pin.** Two of the seven anchors only ever show up in the dark scheme, so on
  *   a light-mode machine they would otherwise be uneditable. `data-li-scheme` forces the
- *   scheme; globals.css honours it alongside the media query.
+ *   scheme; globals.css honours it, and "auto" is the value that hands the choice back to
+ *   the OS. The app itself ships light, so with no attribute set there is nothing to undo.
  * - **A contrast readout.** Looped In's token table is *argued* from contrast, so the way
  *   a permutation fails is by quietly dropping a pair below its threshold rather than by
  *   looking wrong. CONTRAST_CHECKS puts those ratios on screen while you drag.
@@ -51,17 +53,20 @@ function writeVars(palette: Palette | null) {
   window.dispatchEvent(new Event(PALETTE_EVENT));
 }
 
-function writeScheme(scheme: Scheme | null) {
-  const el = document.documentElement;
-  if (scheme) el.setAttribute("data-li-scheme", scheme);
-  else el.removeAttribute("data-li-scheme");
+function writeScheme(scheme: Scheme) {
+  document.documentElement.setAttribute("data-li-scheme", scheme);
   window.dispatchEvent(new Event(PALETTE_EVENT));
 }
 
-const SCHEME_OPTIONS: { value: Scheme | null; label: string }[] = [
-  { value: null, label: "Auto" },
+/**
+ * Light first, because that is what the app ships — so the default state always has a
+ * button lit rather than looking like nothing is selected. "Auto" is the opt-in that
+ * hands the choice back to the OS; it is no longer what happens when you choose nothing.
+ */
+const SCHEME_OPTIONS: { value: Scheme; label: string }[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
+  { value: "auto", label: "Auto" },
 ];
 
 export function ColourPicker() {
@@ -69,7 +74,8 @@ export function ColourPicker() {
   // null = no overrides, so the app renders exactly what globals.css ships.
   const [palette, setPalette] = useState<Palette | null>(null);
   const [presetId, setPresetId] = useState<string>(SHIPPED_PRESET_ID);
-  const [scheme, setScheme] = useState<Scheme | null>(null);
+  // No attribute on <html> renders as DEFAULT_SCHEME, so React starts where the DOM is.
+  const [scheme, setScheme] = useState<Scheme>(DEFAULT_SCHEME);
   const [copied, setCopied] = useState("");
 
   const apply = useCallback((next: Palette | null, id: string) => {
@@ -79,7 +85,7 @@ export function ColourPicker() {
     savePickerState({ palette: next, presetId: id });
   }, []);
 
-  const applyScheme = useCallback((next: Scheme | null) => {
+  const applyScheme = useCallback((next: Scheme) => {
     writeScheme(next);
     setScheme(next);
     savePickerState({ scheme: next });

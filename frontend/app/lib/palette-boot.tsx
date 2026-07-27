@@ -24,7 +24,7 @@ if(!raw)return;
 var s=JSON.parse(raw);
 if(!s||typeof s!=="object")return;
 var el=document.documentElement;
-if(s.scheme==="light"||s.scheme==="dark")el.setAttribute("data-li-scheme",s.scheme);
+if(s.scheme==="light"||s.scheme==="dark"||s.scheme==="auto")el.setAttribute("data-li-scheme",s.scheme);
 var p=s.palette;
 if(!p||typeof p!=="object")return;
 var vars=${JSON.stringify(ANCHORS.map((a) => [a.key, a.cssVar]))},i,v,ok=[];

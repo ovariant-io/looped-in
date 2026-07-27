@@ -10,17 +10,20 @@ import styles from "./brand-logo.module.css";
  * both: it measures 3.48:1 on the dark ground, clear of the 3:1 threshold for graphics, and
  * recolouring the mark would mean shipping a logo that isn't the brand's.
  *
- * `<picture>` with a `prefers-color-scheme` source does the swap in the browser's image
- * selection, so only the matching file is ever fetched and there is no JS, no flash, and no
- * hydration boundary. `next/image` has no equivalent — it cannot emit media-conditional
- * sources — which is why this is a plain `<img>`.
+ * **The `<img>` is always the light lockup, and dark is a stylesheet concern.** This used to
+ * be a `<picture>` whose `<source>` matched `prefers-color-scheme`, which was right while the
+ * ground followed the OS. It no longer does: the app ships light and goes dark only for an
+ * explicit `data-li-scheme`, and a `<source>` cannot see an attribute. Left as it was, every
+ * dark-mode machine would be served the cream wordmark and paint it onto the light ground,
+ * where it is invisible.
  *
- * The one thing `<picture>` cannot see is the colour picker pinning a scheme: its source is
- * matched on `prefers-color-scheme`, so a pinned light preview on a dark-scheme machine would
- * still be served the cream wordmark and paint it onto the cream ground. The stylesheet covers
- * that case by painting the right artwork as a background and hiding the `<img>` — and because
- * a background-image in a rule that does not match is never requested, the ordinary unpinned
- * path still fetches exactly one file and runs no JS.
+ * So the dark artwork is painted as a background and the `<img>` faded out, under exactly the
+ * conditions globals.css turns the ground dark. A background-image in a rule that does not
+ * match is never requested, so the default — light, which is now most visitors — still fetches
+ * one file and runs no JS. Opting into dark costs the second fetch.
+ *
+ * `next/image` is still not usable here: the `<img>` has to be the element the stylesheet
+ * hides, and the background has to sit on a wrapper it does not control.
  *
  * If the brand ever supplies an official reversed lockup, replace the generated dark PNG with
  * it; nothing here has to change.
@@ -33,13 +36,16 @@ export function BrandLogo({
   priority?: boolean;
 }) {
   return (
-    <picture className={styles.picture}>
-      <source
-        srcSet="/looped-in-logo-dark.png"
-        media="(prefers-color-scheme: dark)"
-      />
-      {/* A bare <img> on purpose: next/image cannot express a <picture> media source,
-          which is what selects the light/dark lockup without JS. */}
+    // The wrapper carries the dark artwork as a background; the <img> below is what gets
+    // hidden, so the two cannot be the same element (opacity would take the background
+    // with it). It also lays out the box, so the background needs no dimensions.
+    <span className={styles.frame}>
+      {/* eslint-disable-next-line @next/next/no-img-element -- the rule's exemption is for
+          <img> inside <picture>, which this deliberately no longer is. next/image would
+          route a ~9 KB static lockup through the optimizer Lambda for no gain, and this
+          element has to stay something the stylesheet can fade to swap the dark artwork
+          in. The lint concern (unoptimized LCP image) is answered by the caller's
+          `priority`, which sets eager loading and high fetch priority below. */}
       <img
         src="/looped-in-logo.png"
         alt="Looped In"
@@ -52,6 +58,6 @@ export function BrandLogo({
         fetchPriority={priority ? "high" : "auto"}
         decoding="async"
       />
-    </picture>
+    </span>
   );
 }

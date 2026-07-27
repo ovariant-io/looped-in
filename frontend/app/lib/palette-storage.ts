@@ -17,7 +17,7 @@ export interface PickerState {
   /** null = no overrides; the app follows globals.css. */
   palette: Palette | null;
   presetId: string;
-  /** null = follow the OS. */
+  /** null = nothing chosen, so the shipped DEFAULT_SCHEME (light) stands. */
   scheme: Scheme | null;
 }
 
@@ -66,7 +66,12 @@ function normalizeState(value: unknown): PickerState | null {
     // A stored palette with an unrecognised preset id is still a real palette; it is just
     // no longer one of ours, so it reads back as "custom".
     presetId: palette ? (presetId ?? "custom") : DEFAULT_STATE.presetId,
-    scheme: source.scheme === "light" || source.scheme === "dark" ? source.scheme : null,
+    scheme:
+      source.scheme === "light" ||
+      source.scheme === "dark" ||
+      source.scheme === "auto"
+        ? source.scheme
+        : null,
   };
 }
 

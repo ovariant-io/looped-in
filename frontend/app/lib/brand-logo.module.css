@@ -7,32 +7,44 @@
 }
 
 /*
- * The pinned-scheme override.
+ * The dark lockup.
  *
- * <picture> picks its source from `prefers-color-scheme`, which the colour picker's scheme
- * pin cannot move — so a pinned preview would show the wrong lockup (a cream wordmark on the
- * cream ground is invisible). When, and only when, a scheme is pinned, the correct artwork is
- * painted as a background and the <img> is faded out; the img still lays the box out, so the
- * background needs no dimensions of its own.
+ * The <img> is always the light artwork, so the dark scheme is swapped in here: paint the
+ * reversed lockup as a background on the wrapper and fade the <img> out. A background-image
+ * inside a rule that does not match is never requested, so the light default costs nothing.
  *
- * A background-image inside a rule that does not match is never requested, so with no pin —
- * every real visitor — this costs no extra byte and the single-fetch <picture> path is intact.
+ * The conditions must be exactly the two that turn the ground dark in globals.css — pinned
+ * dark, or auto on an OS asking for dark. Any drift and the wordmark is painted in the wrong
+ * ink for its ground, which at ~1.4:1 means an invisible logo rather than a subtle bug.
+ * Stated twice for the same reason globals.css states it twice: CSS cannot OR a media query
+ * with a selector. Keep the two pairs in step.
  */
-.picture {
+/* Shrink-wraps the <img> so the background is drawn over exactly the img's box. Every
+   current caller makes this a flex item, which already content-sizes it; stating it here
+   means a caller that drops the lockup into a plain block doesn't get the dark artwork
+   stretched to the container's width. */
+.frame {
   display: block;
+  width: fit-content;
   background-repeat: no-repeat;
   background-position: center;
   background-size: contain;
 }
 
-:global(:root[data-li-scheme="light"]) .picture {
-  background-image: url("/looped-in-logo.png");
+@media (prefers-color-scheme: dark) {
+  :global(:root[data-li-scheme="auto"]) .frame {
+    background-image: url("/looped-in-logo-dark.png");
+  }
+
+  :global(:root[data-li-scheme="auto"]) .logo {
+    opacity: 0;
+  }
 }
 
-:global(:root[data-li-scheme="dark"]) .picture {
+:global(:root[data-li-scheme="dark"]) .frame {
   background-image: url("/looped-in-logo-dark.png");
 }
 
-:global(:root[data-li-scheme]) .logo {
+:global(:root[data-li-scheme="dark"]) .logo {
   opacity: 0;
 }

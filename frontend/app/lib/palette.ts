@@ -10,14 +10,15 @@
  * engine here. The theme lab this is modelled on has ten-step ramps to rebuild from each
  * anchor and needs OKLCH tonal templates to do it; Looped In has seven colours and a
  * cascade. What this design system needs instead is a **contrast readout** — the token
- * table in CLAUDE.md is *justified* by contrast (sky is ~1.03:1 on cream, the plum
- * wordmark ~1.4:1 on the dark ground), so the failure mode worth surfacing is a
- * permutation that quietly breaks those ratios. CONTRAST_CHECKS encodes the pairs the
- * design already depends on, and the randomiser refuses to hand back a palette that
- * fails them.
+ * table in CLAUDE.md is *justified* by contrast (in the brand palette, sky is ~1.03:1 on
+ * cream and the plum wordmark ~1.4:1 on the dark ground), so the failure mode worth
+ * surfacing is a permutation that quietly breaks those ratios. CONTRAST_CHECKS encodes
+ * the pairs the design already depends on, and the randomiser refuses to hand back a
+ * palette that fails them.
  *
- * DEFAULT_PALETTE mirrors the :root block of app/globals.css. If the shipped brand
- * colours are ever retuned, retune this map with them.
+ * DEFAULT_PALETTE mirrors the :root block of app/globals.css — today the "Dusk"
+ * permutation rather than the brand site's own colours. If the shipped palette is ever
+ * retuned, retune this map with it.
  *
  * No server imports: this module is pulled into a client component.
  */
@@ -33,8 +34,17 @@ export type AnchorKey =
 
 export type Palette = Record<AnchorKey, string>;
 
-/** Which colour scheme a permutation is being judged in. `null` = follow the OS. */
-export type Scheme = "light" | "dark";
+/**
+ * Which colour scheme is in force.
+ *
+ * "auto" follows the OS; "light" and "dark" pin one. The app ships **light**, so a
+ * stored `null` (nothing chosen yet) means light, not auto — globals.css only goes dark
+ * for an explicit "dark", or for "auto" on a machine asking for dark.
+ */
+export type Scheme = "light" | "dark" | "auto";
+
+/** What <html> renders as before anyone has chosen. Mirrors globals.css's :root. */
+export const DEFAULT_SCHEME: Scheme = "light";
 
 export interface Anchor {
   key: AnchorKey;
@@ -108,8 +118,19 @@ export const ANCHOR_KEYS: readonly AnchorKey[] = ANCHORS.map((a) => a.key);
  */
 export const PALETTE_EVENT = "looped-in:palette";
 
-/** Mirrors the :root block of app/globals.css. */
+/** Mirrors the :root block of app/globals.css — the "Dusk" permutation. */
 export const DEFAULT_PALETTE: Palette = {
+  cream: "#e4dee6",
+  ink: "#140f1c",
+  indigo: "#6250bf",
+  sky: "#cfc7ee",
+  eggplant: "#4a3417",
+  plum: "#3a2b52",
+  night: "#171325",
+};
+
+/** The brand site's own palette — shipped until Dusk replaced it, kept as a preset. */
+const BRAND_PALETTE: Palette = {
   cream: "#e0dccc",
   ink: "#000000",
   indigo: "#4e67b1",
@@ -290,14 +311,27 @@ export interface Preset {
   palette: Palette;
 }
 
+/**
+ * The "no overrides" preset — the one that lets the app keep following globals.css.
+ *
+ * Its *name* tracks whatever globals.css currently ships (Dusk today); the id does not,
+ * because it is persisted in localStorage and accepted in `?palette=` links, so renaming
+ * it would strand both.
+ */
 export const SHIPPED_PRESET_ID = "looped-in";
 
 export const PRESETS: readonly Preset[] = [
   {
     id: SHIPPED_PRESET_ID,
-    name: "Looped In",
-    blurb: "The brand site's own palette",
+    name: "Dusk",
+    blurb: "Twilight violet and candle amber — what ships",
     palette: { ...DEFAULT_PALETTE },
+  },
+  {
+    id: "brand",
+    name: "Brand site",
+    blurb: "The looped-in.com.au palette, before Dusk",
+    palette: { ...BRAND_PALETTE },
   },
   {
     id: "harbour",
@@ -339,20 +373,6 @@ export const PRESETS: readonly Preset[] = [
       eggplant: "#54291a",
       plum: "#432a20",
       night: "#1e1410",
-    },
-  },
-  {
-    id: "dusk",
-    name: "Dusk",
-    blurb: "Twilight violet and candle amber",
-    palette: {
-      cream: "#e4dee6",
-      ink: "#140f1c",
-      indigo: "#6250bf",
-      sky: "#cfc7ee",
-      eggplant: "#4a3417",
-      plum: "#3a2b52",
-      night: "#171325",
     },
   },
   {
