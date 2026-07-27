@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Amazon.Runtime;
 using LoopedIn.Api.Infrastructure.Diagnostics;
+using LoopedIn.Api.Infrastructure.Http;
 using LoopedIn.Api.Infrastructure.Storage;
 using LoopedIn.Api.Models;
 
@@ -241,7 +242,7 @@ public static class DocumentEndpoints
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        var ownerId = user.FindFirstValue(ClaimTypes.NameIdentifier) ?? user.FindFirstValue("sub");
+        var ownerId = user.GetSubject();
         if (!DocumentKey.IsValidOwnerId(ownerId))
         {
             // The token validated but carries no usable subject — refuse rather than invent a

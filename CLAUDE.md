@@ -18,11 +18,14 @@ docker-compose.yml   ← orchestrates frontend (3000) + backend (5114→8080), p
 sst.config.ts        ← thin SST entry point — dynamically imports the modules in infra/
 infra/               ← SST resource modules: config/ (stages, secret manifest), services/ (api, gateway, mcp, mcp-gateway, web), storage/ (S3 bucket), operations/, shared/, names.ts; see infra/README.md
 scripts/deploy.mjs   ← dotenv → SST secrets → deploy (per-stage: local | test | prod); reads infra/config/secrets.json
+scripts/import_clients.py ← xlsx → data/clients-import.sql + report (Python 3.13 stdlib only); see Clients below
 DEPLOY.md            ← what gets deployed, secrets table, one-time setup, teardown
 .claude/skills/      ← prime-context (session priming) + future reference skills
 ```
 
 Each app carries its own container setup: `frontend/Dockerfile` + `frontend/.dockerignore`, `backend/Dockerfile` + `backend/.dockerignore`, `mcp/Dockerfile` + `mcp/.dockerignore`. `.gitignore`s live per-app (`frontend/.gitignore`, `backend/.gitignore`, `mcp/.gitignore`) except the root one, which covers the infra (`.sst/`, root `node_modules/`, `.open-next/`, the Lambda publish dir).
+
+**`/*.xlsx` and `/data/` are gitignored because they hold personal data.** The outreach spreadsheet names ~150 individuals and their work contact details, and the importer's generated SQL and report carry the same data. Committing any of it puts personal data in git history permanently, where deleting the file does not remove it. The importer regenerates `data/` on demand — deterministically — which is what makes ignoring it safe rather than lossy.
 
 **The services now talk over Clerk-authenticated calls.** The frontend `/me` page (`app/me/page.tsx`) makes a **server-side** call to the backend's protected `GET /me` using `BACKEND_URL` (the Compose network); `NEXT_PUBLIC_API_URL` remains available for browser-side calls via the host port. See **Authentication (Clerk)** below. The `/documents` page follows the same server-side pattern — see **Documents (S3)**.
 
@@ -77,7 +80,7 @@ There is **no test suite** in any app — verify changes by building and running
 ## Stack
 
 - **Frontend:** Next.js **16.2.9** + React **19**, TypeScript, **App Router** (`app/`), no `src/` dir, **no Tailwind**, import alias `@/*`. `next.config.ts` sets `output: "standalone"` so the Docker image ships a trimmed `node_modules` + `server.js`. Auth via **Clerk** (`@clerk/nextjs`) — see Authentication below.
-- **Backend:** .NET **10** (`net10.0`) **minimal API** in `backend/LoopedIn.Api/Program.cs` (`GET /` hello + the three `*/ping` configuration checks + protected `GET /me`), with document CRUD mapped from `Endpoints/DocumentEndpoints.cs`. OpenAPI via `Microsoft.AspNetCore.OpenApi` (no Swashbuckle); `Nullable` + `ImplicitUsings` + `TreatWarningsAsErrors` enabled, packages centrally versioned in `Directory.Packages.props`. Requires the **.NET 10 SDK** (installed here via Homebrew → `/opt/homebrew/bin/dotnet`). Protected endpoints are guarded by **Clerk JWT Bearer** auth — see Authentication below.
+- **Backend:** .NET **10** (`net10.0`) **minimal API** in `backend/LoopedIn.Api/Program.cs` (`GET /` hello + the three `*/ping` configuration checks + protected `GET /me`), with document CRUD mapped from `Endpoints/DocumentEndpoints.cs` and client CRUD from `Endpoints/ClientEndpoints.cs`. OpenAPI via `Microsoft.AspNetCore.OpenApi` (no Swashbuckle); `Nullable` + `ImplicitUsings` + `TreatWarningsAsErrors` enabled, packages centrally versioned in `Directory.Packages.props`. Requires the **.NET 10 SDK** (installed here via Homebrew → `/opt/homebrew/bin/dotnet`). Protected endpoints are guarded by **Clerk JWT Bearer** auth — see Authentication below.
 - **MCP:** Python **3.13** + **FastMCP 3.x** in `mcp/looped_in_mcp/` (`config`/`auth`/`middleware`/`backend`/`deps`/`app` + `tools/`), served over streamable HTTP at `/mcp`. Clerk is the OAuth **authorization server** via Dynamic Client Registration; this server is a **resource server** (`RemoteAuthProvider` + `JWTVerifier`). Runs under uvicorn locally and **Mangum** on Lambda — `server.py` is the only file that knows the difference. See `mcp/README.md`.
 - **Containers:** multi-stage Dockerfiles, all three final images run **non-root**. Backend listens on `8080` inside the container (`ASPNETCORE_HTTP_PORTS`); host maps it to `5114`. MCP listens on `8000` in both.
 
@@ -103,8 +106,32 @@ The visual language comes from the **Looped In brand site, <https://www.looped-i
 
 The backend talks to **Neon** (serverless Postgres) via **Npgsql** (a pooled `NpgsqlDataSource`). The connection string comes from the `DATABASE_URL` environment variable: locally it's loaded from a gitignored **`backend/.env.local`** (via `DotNetEnv`), and in Compose it's passed through `env_file` (optional, so `up` still works without it). `backend/.env.local.example` is the committed template — copy it to `.env.local` and paste your Neon URL.
 
-- `DATABASE_URL` accepts **either** Neon's `postgresql://…` URL **or** a native Npgsql key/value string; `DbBootstrap.ToNpgsqlConnectionString` in `Program.cs` normalizes the URL form (and honors `?sslmode=`, defaulting to `Require` since Neon requires TLS).
-- **`GET /db/ping`** is the connectivity check: runs `SELECT version(), now()` → `{ connected, version, serverTime }`. It returns **503** with a clear message when `DATABASE_URL` is unset, so the rest of the API runs fine with no DB configured.
+- `DATABASE_URL` accepts **either** Neon's `postgresql://…` URL **or** a native Npgsql key/value string; `DbBootstrap.ToNpgsqlConnectionString` in `Program.cs` normalizes the URL form (and honors `?sslmode=`, defaulting to `Require` since Neon requires TLS). An unparseable value degrades like an unset one — it never takes the whole API down.
+- **`GET /db/ping`** is the connectivity check: runs `SELECT version(), now()` → `{ connected, version, serverTime }`. It returns **503** with a clear message when `DATABASE_URL` is unset **or when startup migration failed**, so the rest of the API runs fine with no DB configured.
+- **`DatabaseState` is the single answer to "is the database usable".** A *mutable* singleton, unlike the immutable `DocumentStorageStatus`, because migrations run after `builder.Build()` has sealed the DI container — the holder has to exist before the outcome does. It is registered on **both** branches of `AddNeonDatabase` and starts unavailable.
+
+### Migrations
+
+Numbered SQL files in `backend/LoopedIn.Api/Infrastructure/Database/Migrations/`, embedded in the assembly (wildcard `EmbeddedResource`) and applied by `DatabaseMigrator` after `builder.Build()`. **Read `Migrations/README.md` before adding one** — it is the contract. In short:
+
+- **Files are append-only and an applied file is never edited.** Each file's SHA-256 is recorded on apply and re-checked every boot; a mismatch is a **hard failure**, because the deployed schema and the repo disagreeing is not something to guess about. Checksums are over newline-normalized text, so a CRLF checkout doesn't hard-fail a boot over an unchanged schema.
+- **The lock is `pg_advisory_xact_lock`, never `pg_advisory_lock`.** A session lock silently stops providing mutual exclusion through PgBouncer transaction pooling — which is exactly what Neon's pooled endpoint is. Use the **pooled endpoint** on deployed stages; Lambda concurrency multiplies connections and Npgsql's pool is per-instance.
+- **Warm boots take no lock at all**: the journal is read first and, if nothing is pending, the run is one round trip. That keeps Lambda cold starts off the lock.
+- **A failure is never fatal.** It is logged, recorded in `DatabaseState`, and surfaced as 503 by `/db/ping` and every `/clients` route. The app boots either way; serving CRUD against a half-migrated schema would be worse than serving nothing.
+
+## Clients (Neon Postgres)
+
+`/clients` is CRUD over a shared client list and its contacts — the first real SQL schema in the repo (`clients` + `contacts`, migration `0001`).
+
+- **These rows are shared by every signed-in user**, the deliberate opposite of documents. A document's S3 key derives from the caller's own `sub`, so no request shape reaches another user's data; here everyone reads and writes everything. `.RequireAuthorization()` on the group is the *only* line of defence, which makes **who can sign up to the Clerk instance a security decision for this feature** — restrict sign-up before seeding real data. `created_by`/`updated_by` always come from the validated token, never the body.
+- **`version` (bigint) is the optimistic-concurrency token, and this is the house pattern** for every future mutable table. `PATCH` requires `expectedVersion` (**400** without it — optional protection is decorative the day the UI forgets), the UPDATE carries `where version = @expected`, and zero rows affected is disambiguated into **404** or **409**. `updated_at` is display-only: a timestamp would have to round-trip Postgres microseconds through JSON and a JS `Date` bit-exactly, and it can't.
+- **`PATCH` is a full replacement of the mutable fields, not a merge.** With records and System.Text.Json an absent property and an explicit `null` are indistinguishable, so merge-patch cannot be expressed — `null` means *clear the field*. This is why editing from a list row (`updateClientFromRow`) reads the current `notes` first: the row doesn't carry them, and omitting them would wipe them.
+- **`DatabaseGateFilter` (`Infrastructure/Http/`) is the shared preamble as composition** — 503 when the database is unusable, 401 when the token has no subject, `NpgsqlException` → 503, **unique violation (23505) → 409**. Stated once on the group with `AddEndpointFilter`, so a route added later can't forget it. `ClaimsPrincipalExtensions.GetSubject()` is now the one definition of "who is calling" (`/me` and `DocumentEndpoints` were retrofitted to it).
+- **Handlers take `IServiceProvider`, not `ClientStore`.** Minimal-API parameter binding runs *before* endpoint filters, so an unregistered service would blow up in front of the 503 the filter exists to give.
+- **Validation mirrors the CHECK constraints** (`Models/ClientValidation.cs`) so a violation is a 400 and never a 500. `IsPlausibleEmail` **must stay equivalent to `is_plausible_email` in `scripts/import_clients.py`** — the importer writes straight to Postgres and bypasses request validation, so a stricter rule here doesn't reject bad data, it makes already-stored rows uneditable. (A trailing dot is tolerated on both sides for exactly that reason.)
+- **Search is `ilike` with `%`, `_` and `\` escaped**, matched `escape '\'` so searching `100%` finds the literal string. At ~200 rows a sequential scan is correct; `pg_trgm` is the fix at five figures, not before. Ordering is always `(created_at desc, id desc)` — every seeded row shares one `created_at`, so the id tiebreak is what makes paging stable.
+- **Frontend `app/clients/`** follows `app/documents/`: `types.ts` (no server imports), `actions.ts` (`"use server"`), a client manager rendering **straight from props**. **List state lives in the URL** — a client component can't call `callBackend`, so the search box and pager `router.replace('?search=&page=')`, the server component re-reads `searchParams` and re-fetches. That is the house pattern for list screens.
+- **Seed data** comes from `scripts/import_clients.py` (Python 3.13 stdlib only) → gitignored `data/`. Ids are **deterministic UUIDv5**, because regenerating the file is the normal path and regenerated UUIDv7s would turn `on conflict do nothing` into mass duplication. The script asserts its own output counts and refuses to write when they drift.
 
 ## Documents (S3)
 
