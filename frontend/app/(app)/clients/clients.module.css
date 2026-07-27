@@ -21,14 +21,6 @@
   line-height: var(--li-heading-leading);
 }
 
-.intro {
-  margin: 0;
-  max-width: 62ch;
-  color: color-mix(in srgb, var(--foreground) 65%, transparent);
-  line-height: var(--li-body-leading);
-}
-
-.intro code,
 .card code,
 .hint code {
   font-family: var(--font-geist-mono), ui-monospace, monospace;

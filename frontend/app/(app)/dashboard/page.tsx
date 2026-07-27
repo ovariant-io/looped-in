@@ -33,11 +33,6 @@ export default function DashboardPage() {
         <Suspense fallback={<h1 className={styles.title}>Welcome</h1>}>
           <WelcomeHeading />
         </Suspense>
-        <p className={styles.intro}>
-          Your data and the assistants that reach it, on one account. Everything
-          below is live — the counts come from the same authenticated API your
-          AI clients call.
-        </p>
       </header>
 
       <section className={styles.tiles} aria-label="Overview">

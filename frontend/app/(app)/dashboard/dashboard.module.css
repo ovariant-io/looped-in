@@ -33,11 +33,6 @@
   line-height: var(--li-heading-leading);
 }
 
-.intro {
-  max-width: 62ch;
-  color: color-mix(in srgb, var(--foreground) 76%, transparent);
-}
-
 /* auto-fit rather than a fixed count, so the row reflows to 3 / 2 / 1 without breakpoints. */
 .tiles {
   display: grid;

@@ -14,12 +14,6 @@ export default function DocumentsPage() {
   return (
     <main className={styles.main}>
       <h1 className={styles.title}>Documents</h1>
-      <p className={styles.intro}>
-        Your documents live in S3 under a key derived from your account, so no
-        request can reach another user&apos;s files. Uploads and downloads go
-        directly between your browser and S3 over short-lived signed URLs — the
-        API hands out the URL but never carries the bytes.
-      </p>
       {/* auth() and the no-store fetch are request-dynamic, so the dynamic work lives in its
           own Suspense boundary. Cache Components is currently off (see next.config.ts); the
           boundary is kept so it can be re-enabled. */}

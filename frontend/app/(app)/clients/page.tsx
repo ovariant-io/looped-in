@@ -21,12 +21,6 @@ export default function ClientsPage({
   return (
     <main className={styles.main}>
       <h1 className={styles.title}>Clients</h1>
-      <p className={styles.intro}>
-        The outreach list, shared by everyone signed in — not filed per user like
-        your documents. Every change records who made it, and edits carry the
-        version you loaded, so two people editing the same client is caught rather
-        than silently resolved in favour of whoever saved last.
-      </p>
       {/* auth() and the no-store fetch are request-dynamic, so the dynamic work — including
           reading searchParams — lives inside its own Suspense boundary. Cache Components is
           currently off (see next.config.ts); the boundary is kept so it can be re-enabled. */}
