@@ -1,6 +1,8 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Mono } from "next/font/google";
+import { ColourPicker } from "./lib/colour-picker";
+import { PaletteBoot } from "./lib/palette-boot";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -39,6 +41,12 @@ export const metadata: Metadata = {
  * screens rendered straight under this layout, while everything behind sign-in is
  * wrapped by the sidebar shell in `app/(app)/layout.tsx`. Putting a header here is
  * what previously forced the landing page to wear the app's chrome.
+ *
+ * The colour picker is the one thing both shapes share. It is mounted here rather than in
+ * either shell because it re-themes by writing custom properties on <html>, so it has to
+ * outlive any single screen — and the landing scene is the most colour-forward surface in
+ * the app to judge a permutation against. `suppressHydrationWarning` is for `PaletteBoot`,
+ * which sets `style` and `data-li-scheme` on <html> before React hydrates.
  */
 export default function RootLayout({
   children,
@@ -49,9 +57,14 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${spaceMono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <PaletteBoot />
+      </head>
       <body>
         <ClerkProvider>{children}</ClerkProvider>
+        <ColourPicker />
       </body>
     </html>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { PALETTE_EVENT } from "./lib/palette";
 import styles from "./loop-scene.module.css";
 
 /**
@@ -20,9 +21,12 @@ import styles from "./loop-scene.module.css";
  * - **Labels are projected HTML, not sprites.** Real DOM text is selectable, readable by a
  *   screen reader, crisp at any DPI, and inherits the theme's colours from CSS — a canvas
  *   sprite gets none of that and would have to be redrawn on a colour-scheme change.
- * - **The palette follows the colour scheme.** Sky is all but invisible on the cream ground
- *   (~1.03:1) and indigo goes muddy on the warm near-black, so the client nodes swap between
- *   plum and sky the same way `--li-rule` does in globals.css.
+ * - **The palette is read from CSS, not held here.** The scene's colours are the computed
+ *   values of `--li-scene-mark`, `--li-scene-node` and `--li-rule`, so the light/dark swap
+ *   is stated once in globals.css instead of duplicated as hexes in this file — and the
+ *   colour picker re-themes the scene for free, since it moves the same tokens. (Sky is
+ *   all but invisible on the cream ground at ~1.03:1 and plum goes muddy on the warm
+ *   near-black, which is why the node colour has to swap at all.)
  */
 
 const CLIENTS = [
@@ -49,25 +53,32 @@ const MARK = {
 const SCALE = 0.01;
 
 type Palette = {
-  mark: number;
-  client: number;
-  link: number;
-  pulse: number;
+  mark: string;
+  client: string;
+  link: string;
+  pulse: string;
 };
 
-const LIGHT: Palette = {
-  mark: 0x4e67b1, // --li-indigo, 3.8:1 on the cream ground
-  client: 0x351f40, // the lockup's own plum — sky would vanish on cream
-  link: 0x4e67b1,
-  pulse: 0x351f40,
-};
+/**
+ * The scene's colours, read off the document's computed custom properties.
+ *
+ * globals.css already knows which of these swap with the colour scheme, so reading them
+ * here means the swap is defined once. The fallbacks are the shipped brand, for the case
+ * where the tokens resolve to nothing (a stylesheet that has not applied yet).
+ */
+function readPalette(): Palette {
+  const computed = getComputedStyle(document.documentElement);
+  const token = (name: string, fallback: string) =>
+    computed.getPropertyValue(name).trim() || fallback;
 
-const DARK: Palette = {
-  mark: 0x4e67b1,
-  client: 0xbbdfe8, // --li-sky, the legible accent on the warm near-black
-  link: 0xbbdfe8,
-  pulse: 0xbbdfe8,
-};
+  const node = token("--li-scene-node", "#351f40");
+  return {
+    mark: token("--li-scene-mark", "#4e67b1"),
+    client: node,
+    link: token("--li-rule", "#4e67b1"),
+    pulse: node,
+  };
+}
 
 /**
  * The mark's silhouette as a lathe profile: radius from the long axis at each point along it.
@@ -123,7 +134,7 @@ export function LoopScene() {
 
       const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
       const schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      let palette = schemeQuery.matches ? DARK : LIGHT;
+      let palette = readPalette();
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
@@ -420,21 +431,26 @@ export function LoopScene() {
       const onVisibility = () => (document.hidden ? stop() : start());
       document.addEventListener("visibilitychange", onVisibility);
 
-      const onScheme = (event: MediaQueryListEvent) => {
-        palette = event.matches ? DARK : LIGHT;
-        markMaterial.color.setHex(palette.mark);
-        clientMaterial.color.setHex(palette.client);
-        linkMaterial.color.setHex(palette.link);
-        pulseMaterial.color.setHex(palette.pulse);
+      // Re-read the tokens whenever they could have moved: the OS scheme flipping, or the
+      // colour picker rewriting the custom properties. Both land in the same place, so
+      // there is one handler rather than one per source.
+      const onPalette = () => {
+        palette = readPalette();
+        markMaterial.color.setStyle(palette.mark);
+        clientMaterial.color.setStyle(palette.client);
+        linkMaterial.color.setStyle(palette.link);
+        pulseMaterial.color.setStyle(palette.pulse);
         if (!running) draw(1.6); // repaint the static frame under reduced motion
       };
-      schemeQuery.addEventListener("change", onScheme);
+      schemeQuery.addEventListener("change", onPalette);
+      window.addEventListener(PALETTE_EVENT, onPalette);
 
       teardown = () => {
         stop();
         labelListRef.current?.removeAttribute("data-projected");
         document.removeEventListener("visibilitychange", onVisibility);
-        schemeQuery.removeEventListener("change", onScheme);
+        schemeQuery.removeEventListener("change", onPalette);
+        window.removeEventListener(PALETTE_EVENT, onPalette);
         resizeObserver.disconnect();
         renderer.domElement.remove();
         renderer.dispose();

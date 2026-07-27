@@ -16,12 +16,25 @@
  */
 
 :root {
-  /* Raw brand colours — fixed. Reach for the semantic tokens below instead. */
+  /* Raw brand colours. Reach for the semantic tokens below instead.
+     These seven are also the only values the colour picker writes (as inline overrides
+     on <html>, see app/lib/palette.ts) — everything else in this file derives from them
+     through var() or color-mix(), which is what lets one permutation re-theme the whole
+     app without a component knowing. Keep app/lib/palette.ts's DEFAULT_PALETTE in step
+     with this block. */
   --li-cream: #e0dccc;
   --li-ink: #000000;
   --li-sky: #bbdfe8;
   --li-eggplant: #472700;
   --li-indigo: #4e67b1;
+  /* The dark scheme's ground: a warm near-black in the eggplant hue rather than a
+     neutral inversion, so the dark scheme still reads as this brand. A raw token
+     rather than a literal in the media block below, so the picker can drive it. */
+  --li-night: #1a130a;
+  /* The lockup's own wordmark ink, and the landing scene's client nodes on the light
+     ground. Genuinely not --li-eggplant: the Squarespace theme's darkAccent and the
+     logo artwork differ, and this records that rather than papering over it. */
+  --li-plum: #351f40;
 
   /* Semantic tokens — these flip with the colour scheme. */
   --background: var(--li-cream);
@@ -36,6 +49,13 @@
   --li-meta: var(--li-eggplant);
   --li-surface: color-mix(in srgb, var(--foreground) 4%, transparent);
   --li-line: color-mix(in srgb, var(--foreground) 14%, transparent);
+  /* The landing scene (app/loop-scene.tsx) reads these rather than carrying its own copy
+     of the palette. The mark holds indigo in both schemes; the client nodes swap the way
+     --li-rule does, because sky all but vanishes on cream (~1.03:1) and plum goes muddy
+     on the warm near-black. Stating the swap here rather than in the scene is what keeps
+     a WebGL material and a CSS border the same colour by construction. */
+  --li-scene-mark: var(--li-indigo);
+  --li-scene-node: var(--li-plum);
 
   /* Type — the brand site sets headings at .02em tracking over 1.2em leading,
      body at 0em over 1.3em. Aileron is not on Google Fonts; Geist is the closest
@@ -57,16 +77,36 @@
   --li-radius-tile: 14px;
 }
 
+/*
+ * The dark scheme, stated twice on purpose.
+ *
+ * Normally it follows the OS. The colour picker also has to be able to *pin* a scheme,
+ * so the dark half of a permutation can be judged from a light-mode machine — and CSS
+ * cannot OR a media query with a selector, so "dark because the OS says so, or dark
+ * because the picker pinned it" needs two rules. The media block opts out when the
+ * picker has pinned light; the attribute block covers pinned dark.
+ *
+ * Keep the two declaration lists identical.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Warm near-black in the eggplant hue rather than a neutral grey, so the
-       dark scheme still reads as this brand and not as a default inversion. */
-    --background: #1a130a;
+  :root:not([data-li-scheme="light"]) {
+    --background: var(--li-night);
     --foreground: var(--li-cream);
     --li-meta: var(--li-sky);
     /* Indigo goes muddy on the warm near-black; sky is the legible rule here. */
     --li-rule: var(--li-sky);
+    --li-scene-node: var(--li-sky);
+    color-scheme: dark;
   }
+}
+
+:root[data-li-scheme="dark"] {
+  --background: var(--li-night);
+  --foreground: var(--li-cream);
+  --li-meta: var(--li-sky);
+  --li-rule: var(--li-sky);
+  --li-scene-node: var(--li-sky);
+  color-scheme: dark;
 }
 
 html {
@@ -100,10 +140,4 @@ body {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
 }

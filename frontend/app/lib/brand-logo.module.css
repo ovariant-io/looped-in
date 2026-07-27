@@ -5,3 +5,34 @@
   width: var(--logo-width, 150px);
   height: auto;
 }
+
+/*
+ * The pinned-scheme override.
+ *
+ * <picture> picks its source from `prefers-color-scheme`, which the colour picker's scheme
+ * pin cannot move — so a pinned preview would show the wrong lockup (a cream wordmark on the
+ * cream ground is invisible). When, and only when, a scheme is pinned, the correct artwork is
+ * painted as a background and the <img> is faded out; the img still lays the box out, so the
+ * background needs no dimensions of its own.
+ *
+ * A background-image inside a rule that does not match is never requested, so with no pin —
+ * every real visitor — this costs no extra byte and the single-fetch <picture> path is intact.
+ */
+.picture {
+  display: block;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+:global(:root[data-li-scheme="light"]) .picture {
+  background-image: url("/looped-in-logo.png");
+}
+
+:global(:root[data-li-scheme="dark"]) .picture {
+  background-image: url("/looped-in-logo-dark.png");
+}
+
+:global(:root[data-li-scheme]) .logo {
+  opacity: 0;
+}

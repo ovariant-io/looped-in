@@ -15,6 +15,13 @@ import styles from "./brand-logo.module.css";
  * hydration boundary. `next/image` has no equivalent — it cannot emit media-conditional
  * sources — which is why this is a plain `<img>`.
  *
+ * The one thing `<picture>` cannot see is the colour picker pinning a scheme: its source is
+ * matched on `prefers-color-scheme`, so a pinned light preview on a dark-scheme machine would
+ * still be served the cream wordmark and paint it onto the cream ground. The stylesheet covers
+ * that case by painting the right artwork as a background and hiding the `<img>` — and because
+ * a background-image in a rule that does not match is never requested, the ordinary unpinned
+ * path still fetches exactly one file and runs no JS.
+ *
  * If the brand ever supplies an official reversed lockup, replace the generated dark PNG with
  * it; nothing here has to change.
  */
@@ -26,7 +33,7 @@ export function BrandLogo({
   priority?: boolean;
 }) {
   return (
-    <picture>
+    <picture className={styles.picture}>
       <source
         srcSet="/looped-in-logo-dark.png"
         media="(prefers-color-scheme: dark)"
