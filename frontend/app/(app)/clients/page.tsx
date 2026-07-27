@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { callBackend } from "../lib/backend";
+import { callBackend } from "@/app/lib/backend";
 import { ApiError } from "./api-error";
 import { ClientManager } from "./client-manager";
 import { PAGE_SIZE, type ClientListResponse } from "./types";

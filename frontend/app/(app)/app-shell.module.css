@@ -1,0 +1,200 @@
+/*
+ * The signed-in shell: a fixed logo-only header across the top, a fixed nav rail down the
+ * left, and the page in the remaining space. Widths and heights come from the --li-* tokens
+ * in globals.css so the offsets here and the rail can never drift apart.
+ */
+
+.shell {
+  min-height: 100vh;
+}
+
+/* --- header: the brand, and nothing else -------------------------------------------- */
+.header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--li-header-height);
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--li-rail) 88%, transparent);
+  backdrop-filter: saturate(180%) blur(8px);
+  -webkit-backdrop-filter: saturate(180%) blur(8px);
+  border-bottom: 1px solid var(--li-line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+}
+
+.logo {
+  --logo-width: 132px;
+}
+
+/* --- nav rail ------------------------------------------------------------------------ */
+.sidebar {
+  position: fixed;
+  top: var(--li-header-height);
+  bottom: 0;
+  left: 0;
+  z-index: 50;
+  width: var(--li-sidebar-width);
+  display: flex;
+  flex-direction: column;
+  background: var(--li-rail);
+  border-right: 1px solid var(--li-line);
+  transition: transform 0.2s ease;
+}
+
+.nav {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 16px 12px;
+  overflow-y: auto;
+}
+
+.navItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--li-radius-button);
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.navItem svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.navItem:hover {
+  background: color-mix(in srgb, var(--foreground) 7%, transparent);
+  color: var(--foreground);
+}
+
+/* The active row carries the brand accent rather than a grey fill, so the rail states
+   which surface you are on in the brand's own colour. */
+.active,
+.active:hover {
+  background: var(--li-accent);
+  color: var(--li-accent-foreground);
+  font-weight: 700;
+}
+
+.navItem:focus-visible {
+  outline: 2px solid var(--li-rule);
+  outline-offset: -2px;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--li-line);
+  /* Reserve the height so the rail doesn't shift when the auth state streams in. */
+  min-height: 64px;
+}
+
+/* Account block beside the Clerk avatar. Both lines truncate rather than wrap — a long
+   email would otherwise push the rail's footer taller than the space reserved for it. */
+.account {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.accountName {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.accountEmail {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.6875rem;
+  color: var(--li-meta);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- content ------------------------------------------------------------------------- */
+.main {
+  padding-top: var(--li-header-height);
+  padding-left: var(--li-sidebar-width);
+}
+
+/* --- drawer toggle + backdrop (small screens only) ----------------------------------- */
+.menuButton {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--li-radius-button);
+  background: transparent;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+  cursor: pointer;
+}
+
+.menuButton:hover {
+  background: color-mix(in srgb, var(--foreground) 8%, transparent);
+  color: var(--foreground);
+}
+
+.menuButton:focus-visible {
+  outline: 2px solid var(--li-rule);
+  outline-offset: 2px;
+}
+
+.backdrop {
+  display: none;
+  position: fixed;
+  inset: var(--li-header-height) 0 0 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--li-ink) 28%, transparent);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+@media (max-width: 1024px) {
+  .sidebar {
+    transform: translateX(-100%);
+    box-shadow: 0 12px 40px color-mix(in srgb, var(--li-ink) 22%, transparent);
+  }
+
+  .open {
+    transform: translateX(0);
+  }
+
+  .menuButton,
+  .backdrop {
+    display: flex;
+  }
+
+  .main {
+    padding-left: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar {
+    transition: none;
+  }
+}

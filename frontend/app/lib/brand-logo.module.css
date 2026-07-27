@@ -1,0 +1,50 @@
+/* The lockup is 1249×186 (6.72:1). Callers set the width; height follows, so the
+   aspect ratio can never be set wrong at a call site. */
+.logo {
+  display: block;
+  width: var(--logo-width, 150px);
+  height: auto;
+}
+
+/*
+ * The dark lockup.
+ *
+ * The <img> is always the light artwork, so the dark scheme is swapped in here: paint the
+ * reversed lockup as a background on the wrapper and fade the <img> out. A background-image
+ * inside a rule that does not match is never requested, so the light default costs nothing.
+ *
+ * The conditions must be exactly the two that turn the ground dark in globals.css — pinned
+ * dark, or auto on an OS asking for dark. Any drift and the wordmark is painted in the wrong
+ * ink for its ground, which at ~1.4:1 means an invisible logo rather than a subtle bug.
+ * Stated twice for the same reason globals.css states it twice: CSS cannot OR a media query
+ * with a selector. Keep the two pairs in step.
+ */
+/* Shrink-wraps the <img> so the background is drawn over exactly the img's box. Every
+   current caller makes this a flex item, which already content-sizes it; stating it here
+   means a caller that drops the lockup into a plain block doesn't get the dark artwork
+   stretched to the container's width. */
+.frame {
+  display: block;
+  width: fit-content;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+}
+
+@media (prefers-color-scheme: dark) {
+  :global(:root[data-li-scheme="auto"]) .frame {
+    background-image: url("/looped-in-logo-dark.png");
+  }
+
+  :global(:root[data-li-scheme="auto"]) .logo {
+    opacity: 0;
+  }
+}
+
+:global(:root[data-li-scheme="dark"]) .frame {
+  background-image: url("/looped-in-logo-dark.png");
+}
+
+:global(:root[data-li-scheme="dark"]) .logo {
+  opacity: 0;
+}

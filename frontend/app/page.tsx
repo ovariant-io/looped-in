@@ -1,66 +1,50 @@
-import Link from "next/link";
+import { SignInButton, SignUpButton } from "@clerk/nextjs";
+import { BrandLogo } from "./lib/brand-logo";
+import { LoopScene } from "./loop-scene";
 import styles from "./page.module.css";
 
-// The loop, stated once. Each node is a real part of the stack — "Your data" is
-// /documents (S3), "Looped In" is the Clerk-authenticated API, "Your AI tools"
-// is the MCP server — so the picture stays honest as the product fills in.
-const LOOP = [
-  {
-    step: "01",
-    title: "Your data",
-    body: "Documents you upload, held against your account and nobody else's.",
-  },
-  {
-    step: "02",
-    title: "Looped In",
-    body: "One sign-in holds the loop closed — a single authenticated channel.",
-  },
-  {
-    step: "03",
-    title: "Your AI tools",
-    body: "Claude and any MCP client, acting as you, seeing only what you see.",
-  },
-];
-
-export default function Home() {
+/**
+ * The signed-out front door — a stand-alone screen, not a page inside the app.
+ *
+ * It renders straight under the root layout, so it carries none of the signed-in chrome:
+ * no sidebar, no app header, nothing but the brand and the two ways in. A signed-in visitor
+ * never reaches it — `proxy.ts` redirects "/" to /dashboard before this renders, which is
+ * also what keeps this page free of `auth()` and therefore prerenderable.
+ *
+ * There is deliberately no pitch copy: this is a private tool with a known audience, not a
+ * product page, so the screen is a branded door rather than an argument for walking through
+ * it. That is also why the layout is one centred column — with the copy gone there is no
+ * second column to balance the scene against.
+ *
+ * The lockup carries the <h1>. Removing the headline would otherwise leave the page with no
+ * heading at all, and the brand *is* what this page is about; `BrandLogo` renders an <img>
+ * with alt text, so the heading has a real accessible name.
+ */
+export default function Landing() {
   return (
     <main className={styles.main}>
-      <section className={styles.hero}>
+      <header className={styles.head}>
+        <h1 className={styles.brand}>
+          <BrandLogo className={styles.logo} priority />
+        </h1>
         <p className={styles.eyebrow}>Your data · Your AI tools</p>
-        <h1 className={styles.title}>Let&rsquo;s get your data Looped In</h1>
-        <p className={styles.lede}>
-          Everything you upload lives in one place — and connects straight to
-          the AI assistants you already use, over a link that only ever sees
-          what you see.
-        </p>
-      </section>
+      </header>
 
-      {/* The connecting rules between nodes are drawn by CSS pseudo-elements
-          rather than markup, so the nodes stay exactly equal-width and the
-          links can rotate from horizontal to vertical when the row stacks. */}
-      <section
-        className={styles.loop}
-        aria-label="How Looped In connects your data to your AI tools"
-      >
-        {LOOP.map((node, index) => (
-          <article
-            key={node.step}
-            className={`${styles.node}${index === 1 ? ` ${styles.anchor}` : ""}`}
-          >
-            <p className={styles.nodeStep}>{node.step}</p>
-            <h2 className={styles.nodeTitle}>{node.title}</h2>
-            <p className={styles.nodeBody}>{node.body}</p>
-          </article>
-        ))}
-      </section>
+      <div className={styles.scene}>
+        <LoopScene />
+      </div>
 
       <nav className={styles.actions} aria-label="Get started">
-        <Link href="/documents" className={styles.primaryAction}>
-          Your data
-        </Link>
-        <Link href="/connect" className={styles.secondaryAction}>
-          Connect AI
-        </Link>
+        <SignUpButton>
+          <button className={`${styles.button} ${styles.primary}`}>
+            Sign up
+          </button>
+        </SignUpButton>
+        <SignInButton>
+          <button className={`${styles.button} ${styles.ghost}`}>
+            Sign in
+          </button>
+        </SignInButton>
       </nav>
     </main>
   );

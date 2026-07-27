@@ -1,7 +1,7 @@
 "use server";
 
 import { refresh } from "next/cache";
-import { callBackend, type ApiResult } from "../lib/backend";
+import { callBackend, type ApiResult } from "@/app/lib/backend";
 import type { DocumentContent, DocumentDetail, UploadTarget } from "./types";
 
 /**

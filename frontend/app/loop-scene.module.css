@@ -1,0 +1,22 @@
+/* The 3D stage. The canvas is transparent (`alpha: true`), so the scene sits directly on
+   the page ground and inherits the cream / warm-near-black flip for free. */
+
+/* Kept wider than it is tall on purpose. The camera fits the subject to whichever axis is
+   tighter, so a tall stage is framed on width and leaves dead space above and below the
+   mark — a shallower box puts the height in play and the scene fills it. */
+.stage {
+  position: relative;
+  width: 100%;
+  height: clamp(260px, 42vh, 440px);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.canvas canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}

@@ -1,12 +1,9 @@
 import { ClerkProvider } from "@clerk/nextjs";
-import { auth } from "@clerk/nextjs/server";
 import type { Metadata } from "next";
 import { Geist, Geist_Mono, Space_Mono } from "next/font/google";
-import Link from "next/link";
-import { Suspense } from "react";
+import { ColourPicker } from "./lib/colour-picker";
+import { PaletteBoot } from "./lib/palette-boot";
 import "./globals.css";
-import { HeaderNav } from "./header-nav";
-import styles from "./header.module.css";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,20 +27,27 @@ const spaceMono = Space_Mono({
 
 export const metadata: Metadata = {
   // Pages that set their own title (/me, /connect, /documents) override this; it is the
-  // fallback for anything that doesn't, and the tab title on the home page.
+  // fallback for anything that doesn't, and the tab title on the landing page.
   title: "Looped In",
   description:
     "Looped In — your documents and your AI assistants, on one authenticated account.",
 };
 
-// Server slot: resolve the real auth state for THIS request and seed the client
-// nav with it, so the correct buttons render on first paint. `await auth()` is
-// request-dynamic, so this lives behind the <Suspense> boundary below.
-async function HeaderNavSlot() {
-  const { userId } = await auth();
-  return <HeaderNav initialSignedIn={userId != null} />;
-}
-
+/**
+ * Root layout — fonts, tokens, and the Clerk provider, and nothing else.
+ *
+ * There is deliberately no chrome here. The app has two shapes and they do not share
+ * a frame: the signed-out landing page and the auth pages are stand-alone full-bleed
+ * screens rendered straight under this layout, while everything behind sign-in is
+ * wrapped by the sidebar shell in `app/(app)/layout.tsx`. Putting a header here is
+ * what previously forced the landing page to wear the app's chrome.
+ *
+ * The colour picker is the one thing both shapes share. It is mounted here rather than in
+ * either shell because it re-themes by writing custom properties on <html>, so it has to
+ * outlive any single screen — and the landing scene is the most colour-forward surface in
+ * the app to judge a permutation against. `suppressHydrationWarning` is for `PaletteBoot`,
+ * which sets `style` and `data-li-scheme` on <html> before React hydrates.
+ */
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -53,24 +57,14 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${spaceMono.variable}`}
+      suppressHydrationWarning
     >
+      <head>
+        <PaletteBoot />
+      </head>
       <body>
-        <ClerkProvider>
-          <header className={styles.header}>
-            <Link href="/" className={styles.brand}>
-              Looped In
-            </Link>
-            {/* Auth-reactive nav: the server slot seeds the correct buttons for
-                this request (no blank first paint); the client component then
-                tracks Clerk's live session so it updates without a refresh. */}
-            <Suspense
-              fallback={<div className={styles.placeholder} aria-hidden />}
-            >
-              <HeaderNavSlot />
-            </Suspense>
-          </header>
-          {children}
-        </ClerkProvider>
+        <ClerkProvider>{children}</ClerkProvider>
+        <ColourPicker />
       </body>
     </html>
   );

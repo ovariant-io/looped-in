@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { backendUrl, callBackend } from "../lib/backend";
+import { backendUrl, callBackend } from "@/app/lib/backend";
 import styles from "./me.module.css";
 
 export const metadata: Metadata = {

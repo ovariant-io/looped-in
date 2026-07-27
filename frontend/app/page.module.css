@@ -1,177 +1,109 @@
 /*
- * Home. Deliberately one screen: the brand line, the loop, two ways in.
+ * The signed-out landing screen. Stand-alone: it owns the full viewport rather than
+ * sitting inside the app's chrome, so the measurements here are all viewport-relative.
  * Colour, tracking and radii all come from the --li-* tokens in globals.css.
+ *
+ * One centred column — brand, scene, the two ways in. It carries no pitch copy (this is a
+ * private tool, not a product page), so there is no second column to balance the scene
+ * against and a split layout would just be a small block beside a large one.
  */
 
 .main {
-  flex: 1;
-  width: 100%;
-  max-width: 960px;
-  margin: 0 auto;
-  padding: clamp(48px, 10vh, 104px) 24px 72px;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  gap: clamp(48px, 8vh, 80px);
+  align-items: center;
+  justify-content: center;
+  gap: clamp(16px, 3vh, 32px);
+  /* `body` is itself a column flex container, and an `auto` cross-axis margin switches off
+     the stretch a flex item would otherwise get — without this the page shrink-to-fits to
+     its widest child (the lockup) and the scene is handed a ~300px stage to frame itself in. */
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: clamp(32px, 6vh, 72px) clamp(20px, 5vw, 48px);
+  text-align: center;
 }
 
-/* ---- hero ---- */
-
-.hero {
+.head {
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  max-width: 680px;
+  align-items: center;
+  gap: 14px;
+}
+
+/* The lockup is the page's <h1>; the heading contributes semantics, not type styling. */
+.brand {
+  font-size: 0;
+  line-height: 0;
+}
+
+.logo {
+  --logo-width: clamp(210px, 26vw, 300px);
 }
 
 .eyebrow {
-  margin: 0;
   font-family: var(--font-space-mono), ui-monospace, monospace;
   font-size: 0.75rem;
-  font-weight: 400;
-  letter-spacing: 0.16em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--li-meta);
 }
 
-.title {
-  margin: 0;
-  /* Fluid, but anchored to the brand's 1.2 leading and .02em tracking. */
-  font-size: clamp(2.25rem, 6vw, 3.75rem);
-  font-weight: 400;
-  letter-spacing: var(--li-heading-tracking);
-  line-height: var(--li-heading-leading);
-  text-wrap: balance;
-}
-
-.lede {
-  margin: 0;
-  max-width: 34em;
-  font-size: clamp(1rem, 1.6vw, 1.125rem);
-  line-height: var(--li-body-leading);
-  color: color-mix(in srgb, var(--foreground) 72%, transparent);
-}
-
-/* ---- the loop ---- */
-
-.loop {
-  display: flex;
-  align-items: stretch;
-  gap: 32px;
-}
-
-.node {
-  position: relative;
-  flex: 1;
+/* The scene is the centrepiece now, so it gets the full column width to work in. */
+.scene {
+  width: 100%;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 24px;
-  border: 1px solid var(--li-line);
-  border-radius: var(--li-radius-panel);
-  background: var(--li-surface);
 }
-
-/* The linkage: a sky rule laid across the gap to the previous node. Absolute
-   against .node, so it costs no markup and no layout space. */
-.node + .node::before {
-  content: "";
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  width: 32px;
-  height: 2px;
-  background: var(--li-rule);
-}
-
-/* Looped In itself is the anchor of the loop, so it carries the accent fill. */
-.anchor {
-  background: var(--li-accent);
-  border-color: var(--li-accent);
-  color: var(--li-accent-foreground);
-}
-
-.nodeStep {
-  margin: 0;
-  font-family: var(--font-space-mono), ui-monospace, monospace;
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  color: color-mix(in srgb, currentColor 55%, transparent);
-}
-
-.nodeTitle {
-  margin: 0;
-  font-size: 1.25rem;
-  font-weight: 400;
-  letter-spacing: var(--li-heading-tracking);
-  line-height: var(--li-heading-leading);
-}
-
-.nodeBody {
-  margin: 0;
-  font-size: 0.9375rem;
-  line-height: var(--li-body-leading);
-  color: color-mix(in srgb, currentColor 75%, transparent);
-}
-
-/* ---- actions ---- */
 
 .actions {
   display: flex;
   flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
 }
 
-/* Brand button spec: uppercase, 700, 6.4px radius, 1rem/1.3rem padding. */
-.primaryAction,
-.secondaryAction {
-  display: inline-block;
+/* Uppercase, 700, 6.4px radius, 1rem/1.3rem padding — straight off the brand site. */
+.button {
+  appearance: none;
+  font: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1;
   padding: 1rem 1.3rem;
   border-radius: var(--li-radius-button);
-  font-size: 0.875rem;
-  font-weight: 700;
-  line-height: 1.2;
-  text-transform: uppercase;
+  cursor: pointer;
   transition:
     background-color 0.15s ease,
-    color 0.15s ease,
+    border-color 0.15s ease,
     opacity 0.15s ease;
 }
 
-.primaryAction {
+.primary {
   background: var(--foreground);
   border: 1px solid var(--foreground);
   color: var(--background);
 }
 
-.primaryAction:hover {
+.primary:hover {
   opacity: 0.85;
 }
 
-.secondaryAction {
+.ghost {
   background: transparent;
-  border: 1px solid color-mix(in srgb, var(--foreground) 30%, transparent);
+  border: 1px solid color-mix(in srgb, var(--foreground) 26%, transparent);
   color: var(--foreground);
 }
 
-.secondaryAction:hover {
+.ghost:hover {
   background: color-mix(in srgb, var(--foreground) 7%, transparent);
 }
 
-/* ---- stacked ---- */
-
-@media (max-width: 760px) {
-  .loop {
-    flex-direction: column;
-  }
-
-  /* Same rule, rotated into the vertical gap. */
-  .node + .node::before {
-    right: auto;
-    left: 32px;
-    top: auto;
-    bottom: 100%;
-    width: 2px;
-    height: 32px;
-  }
+.button:focus-visible {
+  outline: 2px solid var(--li-rule);
+  outline-offset: 2px;
 }
