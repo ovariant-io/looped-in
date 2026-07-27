@@ -5,8 +5,8 @@ import { PALETTE_EVENT } from "./lib/palette";
 import styles from "./loop-scene.module.css";
 
 /**
- * The landing page's 3D centrepiece: the Looped In mark at the centre of a ring of AI
- * clients, with traffic pulsing along each connection.
+ * The landing page's 3D centrepiece: the Looped In mark alone, in a slow tumble on all
+ * three axes.
  *
  * The mark is not a decorative stand-in — it is the brand mark's own geometry revolved
  * into three dimensions. The lockup's "OO" is two circles of radius 47 whose centres sit
@@ -14,26 +14,15 @@ import styles from "./loop-scene.module.css";
  * silhouette around its long axis gives two spheres joined by a hyperboloid neck, which is
  * what {@link markProfile} builds. Change a number there and it stops being the logo.
  *
- * Three things are deliberate:
+ * Two things are deliberate:
  *
  * - **`three` is imported dynamically.** It is ~600 KB and nothing above the fold needs it,
  *   so it loads after hydration rather than blocking first paint.
- * - **Labels are projected HTML, not sprites.** Real DOM text is selectable, readable by a
- *   screen reader, crisp at any DPI, and inherits the theme's colours from CSS — a canvas
- *   sprite gets none of that and would have to be redrawn on a colour-scheme change.
- * - **The palette is read from CSS, not held here.** The scene's colours are the computed
- *   values of `--li-scene-mark`, `--li-scene-node` and `--li-rule`, so the light/dark swap
- *   is stated once in globals.css instead of duplicated as hexes in this file — and the
- *   colour picker re-themes the scene for free, since it moves the same tokens. (Sky is
- *   all but invisible on the cream ground at ~1.03:1 and plum goes muddy on the warm
- *   near-black, which is why the node colour has to swap at all.)
+ * - **The palette is read from CSS, not held here.** The mark's colour is the computed
+ *   value of `--li-scene-mark`, so the token is stated once in globals.css instead of
+ *   duplicated as a hex in this file — and the colour picker re-themes the scene for
+ *   free, since it moves the same token.
  */
-
-const CLIENTS = [
-  { id: "claude", label: "Claude" },
-  { id: "openai", label: "OpenAI" },
-  { id: "mcp", label: "Any MCP client" },
-] as const;
 
 /** Brand geometry, in the lockup's own units. See public/looped-in-mark.svg. */
 const MARK = {
@@ -52,32 +41,20 @@ const MARK = {
 /** World units per lockup unit — the mark ends up 2.71 across. */
 const SCALE = 0.01;
 
-type Palette = {
-  mark: string;
-  client: string;
-  link: string;
-  pulse: string;
-};
-
 /**
- * The scene's colours, read off the document's computed custom properties.
+ * The mark's colour, read off the document's computed custom properties.
  *
- * globals.css already knows which of these swap with the colour scheme, so reading them
- * here means the swap is defined once. The fallbacks are the shipped brand, for the case
- * where the tokens resolve to nothing (a stylesheet that has not applied yet).
+ * globals.css owns the token, so the colour picker's rewrites reach the WebGL material
+ * through the same channel as every CSS surface. The fallback is the shipped brand
+ * indigo, for the case where the token resolves to nothing (a stylesheet that has not
+ * applied yet).
  */
-function readPalette(): Palette {
-  const computed = getComputedStyle(document.documentElement);
-  const token = (name: string, fallback: string) =>
-    computed.getPropertyValue(name).trim() || fallback;
-
-  const node = token("--li-scene-node", "#351f40");
-  return {
-    mark: token("--li-scene-mark", "#4e67b1"),
-    client: node,
-    link: token("--li-rule", "#4e67b1"),
-    pulse: node,
-  };
+function readMarkColour(): string {
+  return (
+    getComputedStyle(document.documentElement)
+      .getPropertyValue("--li-scene-mark")
+      .trim() || "#4e67b1"
+  );
 }
 
 /**
@@ -118,8 +95,6 @@ function markProfile(THREE: typeof import("three"), segments: number) {
 
 export function LoopScene() {
   const mountRef = useRef<HTMLDivElement | null>(null);
-  const labelListRef = useRef<HTMLUListElement | null>(null);
-  const labelRefs = useRef<(HTMLLIElement | null)[]>([]);
 
   useEffect(() => {
     const mount = mountRef.current;
@@ -134,7 +109,6 @@ export function LoopScene() {
 
       const motionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
       const schemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-      let palette = readPalette();
 
       const scene = new THREE.Scene();
       const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 100);
@@ -148,7 +122,7 @@ export function LoopScene() {
         });
       } catch {
         // No WebGL (old browser, blocked GPU, headless). The page still reads without the
-        // scene — the lockup, the copy and the CTAs are all real DOM — so this stays silent.
+        // scene — the lockup and the CTAs are all real DOM — so this stays silent.
         return;
       }
 
@@ -158,7 +132,7 @@ export function LoopScene() {
 
       // --- the mark ------------------------------------------------------------------
       const markMaterial = new THREE.MeshStandardMaterial({
-        color: palette.mark,
+        color: readMarkColour(),
         metalness: 0.08,
         roughness: 0.42,
       });
@@ -171,62 +145,6 @@ export function LoopScene() {
       markGroup.add(mark);
       scene.add(markGroup);
 
-      // --- the clients, their links, and the traffic on them --------------------------
-      // Sized so the ring plus its labels stay inside the frame at the narrowest column the
-      // landing page gives this scene — the nodes clipped at the edges when it was wider.
-      const ORBIT_RADIUS = 2.75;
-      /**
-       * Labels are anchored *outward along their own spoke* rather than lifted straight up.
-       * Every node sits on a ring around the origin, so pushing radially moves a label away
-       * from its own sphere, away from the mark in the middle, and away from its neighbours,
-       * all at once — and it cannot be pushed off the top of the frame the way a vertical
-       * lift can when a node swings high and near the camera. The small rise is only to
-       * clear the link geometry.
-       */
-      const LABEL_PUSH = 1.19;
-      const LABEL_RISE = 0.26;
-      const clientMaterial = new THREE.MeshStandardMaterial({
-        color: palette.client,
-        metalness: 0.05,
-        roughness: 0.5,
-      });
-      const linkMaterial = new THREE.MeshBasicMaterial({
-        color: palette.link,
-        transparent: true,
-        opacity: 0.42,
-      });
-      const pulseMaterial = new THREE.MeshBasicMaterial({ color: palette.pulse });
-
-      const nodeGeometry = new THREE.SphereGeometry(0.3, 32, 20);
-      // A unit-height cylinder standing on Y; each frame it is scaled to the link's length
-      // and rotated onto it, which is how you get a line with real thickness (WebGL ignores
-      // LineBasicMaterial.linewidth above 1).
-      const linkGeometry = new THREE.CylinderGeometry(0.018, 0.018, 1, 8);
-      const pulseGeometry = new THREE.SphereGeometry(0.062, 12, 10);
-
-      const orbit = new THREE.Group();
-      orbit.rotation.x = -0.34;
-      scene.add(orbit);
-
-      const spokes = CLIENTS.map((client, index) => {
-        const angle = (index / CLIENTS.length) * Math.PI * 2;
-        const node = new THREE.Mesh(nodeGeometry, clientMaterial);
-        node.position.set(
-          Math.cos(angle) * ORBIT_RADIUS,
-          0,
-          Math.sin(angle) * ORBIT_RADIUS,
-        );
-        orbit.add(node);
-
-        const link = new THREE.Mesh(linkGeometry, linkMaterial);
-        orbit.add(link);
-
-        const pulse = new THREE.Mesh(pulseGeometry, pulseMaterial);
-        orbit.add(pulse);
-
-        return { client, node, link, pulse, phase: index / CLIENTS.length };
-      });
-
       const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
       keyLight.position.set(2.6, 3.4, 4.2);
       scene.add(keyLight);
@@ -236,57 +154,12 @@ export function LoopScene() {
       scene.add(new THREE.AmbientLight(0xffffff, 1.25));
 
       // --- responsive framing ---------------------------------------------------------
-      // Label widths are fixed pixels while the scene scales with the viewport, so on a
-      // narrow screen a label on an outer node overhangs the stage. Cached here rather than
-      // read per frame: `offsetWidth` forces layout, and the width only changes when the
-      // font or the box does.
-      const labelHalfWidths: number[] = [];
-      const labelHalfHeights: number[] = [];
-      const measureLabels = () => {
-        labelRefs.current.forEach((label, index) => {
-          labelHalfWidths[index] = label ? label.offsetWidth / 2 : 0;
-          labelHalfHeights[index] = label ? label.offsetHeight / 2 : 0;
-        });
-      };
-
-      /** Keeps a label's centre far enough inside `extent` that its box is not cut off. */
-      const clampToStage = (value: number, half: number, extent: number) =>
-        Math.min(Math.max(value, half + 2), Math.max(extent - half - 2, half + 2));
-
-      /**
-       * Below this width there is no room to place labels around the ring — "Any MCP client"
-       * alone is over a quarter of a phone's viewport, so projecting it can only end up back
-       * on top of its own node. Under the threshold the labels stay in normal flow as a
-       * caption row under the scene, which is the same fallback used when WebGL never starts.
-       */
-      const PROJECTION_MIN_WIDTH = 560;
-      let projecting = false;
-
-      const setProjecting = (next: boolean) => {
-        if (next === projecting) return;
-        projecting = next;
-        if (next) {
-          labelListRef.current?.setAttribute("data-projected", "true");
-          measureLabels(); // widths differ once the labels are out of flow
-        } else {
-          labelListRef.current?.removeAttribute("data-projected");
-          labelRefs.current.forEach((label) => {
-            if (!label) return;
-            label.style.transform = "";
-            label.style.opacity = "";
-          });
-        }
-      };
-
-      // Half-extents of everything that must stay in frame: the orbit radius plus a node,
-      // and the ring's vertical projection once tilted. Framing is solved from these rather
-      // than from a hand-tuned distance, so the subject fills the stage at any aspect —
-      // fitting on height alone left it marooned in whitespace on a wide, short container,
-      // and fitting on width alone cropped the outer nodes on a phone.
-      // Reach of the label anchors, not of the geometry — they sit further out than the
-      // nodes do, so fitting to the spheres alone would push the labels off the edges.
-      const FIT_HALF_WIDTH = ORBIT_RADIUS * LABEL_PUSH + 0.3;
-      const FIT_HALF_HEIGHT = 1.5;
+      // The tumble can point the mark's long axis anywhere, so what has to stay in frame
+      // is its bounding sphere. The left sphere's centre sits one radius in from the end
+      // (47 = 47), so the silhouette spans the full length and the bounding radius is
+      // exactly half of it. Framing is solved from whichever axis is tighter, so the
+      // subject fills the stage at any aspect.
+      const FIT_HALF_EXTENT = (MARK.length / 2) * SCALE + 0.15;
 
       const resize = () => {
         const rect = mount.getBoundingClientRect();
@@ -295,99 +168,25 @@ export function LoopScene() {
         camera.aspect = width / height;
 
         const halfFov = (camera.fov * Math.PI) / 360;
-        const forHeight = FIT_HALF_HEIGHT / Math.tan(halfFov);
-        const forWidth = FIT_HALF_WIDTH / (Math.tan(halfFov) * camera.aspect);
-        // 1.12 leaves margin for the projected labels, which are fixed pixels and so are
-        // not accounted for by the world-space fit above.
-        camera.position.set(0, 0.75, Math.max(forHeight, forWidth) * 1.12);
+        const forHeight = FIT_HALF_EXTENT / Math.tan(halfFov);
+        const forWidth = FIT_HALF_EXTENT / (Math.tan(halfFov) * camera.aspect);
+        camera.position.set(0, 0.55, Math.max(forHeight, forWidth) * 1.08);
         camera.lookAt(0, 0, 0);
         camera.updateProjectionMatrix();
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.setSize(width, height, false);
-        setProjecting(width >= PROJECTION_MIN_WIDTH);
-        if (projecting) measureLabels();
       };
       const resizeObserver = new ResizeObserver(resize);
       resizeObserver.observe(mount);
       resize();
 
       // --- frame ----------------------------------------------------------------------
-      const up = new THREE.Vector3(0, 1, 0);
-      const origin = new THREE.Vector3();
-      const midpoint = new THREE.Vector3();
-      const direction = new THREE.Vector3();
-      const worldPosition = new THREE.Vector3();
-      const projected = new THREE.Vector3();
-
       const draw = (elapsed: number) => {
-        markGroup.rotation.y = Math.sin(elapsed * 0.42) * 0.32;
-        markGroup.rotation.z = Math.sin(elapsed * 0.31) * 0.06;
-        orbit.rotation.y = elapsed * 0.16;
-
-        const rect = mount.getBoundingClientRect();
-
-        spokes.forEach((spoke, index) => {
-          // Link: from the mark at the origin out to the client node. Orienting a cylinder
-          // means rotating its +Y onto the direction and scaling its height to the distance.
-          direction.copy(spoke.node.position).sub(origin);
-          const length = direction.length();
-          midpoint.copy(spoke.node.position).multiplyScalar(0.5);
-          spoke.link.position.copy(midpoint);
-          spoke.link.scale.set(1, length, 1);
-          spoke.link.quaternion.setFromUnitVectors(
-            up,
-            direction.clone().normalize(),
-          );
-
-          // Traffic. Alternating direction per spoke, because the point of the product is
-          // that the channel runs both ways.
-          const t = (elapsed * 0.34 + spoke.phase) % 1;
-          const travel = index % 2 === 0 ? t : 1 - t;
-          spoke.pulse.position.copy(spoke.node.position).multiplyScalar(travel);
-
-          // Project the node into the container's coordinates and park the HTML label there.
-          const label = projecting ? labelRefs.current[index] : null;
-          if (label) {
-            spoke.node.getWorldPosition(worldPosition);
-            // Fade the labels on the far side of the orbit so the ring reads as a ring.
-            // Read the depth before projecting — `project` mutates the vector in place.
-            const behind = worldPosition.z < -0.6;
-            // Offset in *world* space rather than nudging the result in pixels, so the gap
-            // shrinks with distance like everything else and a label never drifts onto its
-            // sphere as it orbits.
-            worldPosition.multiplyScalar(LABEL_PUSH);
-            worldPosition.y += LABEL_RISE;
-            projected.copy(worldPosition).project(camera);
-
-            // Anchor the label on the side of itself that faces the centre, so it grows
-            // outward: a node to the right of centre gets a left-aligned label, one to the
-            // left gets a right-aligned label. Centring every label instead puts half of it
-            // back over its own sphere, which is exactly what the radial push was avoiding.
-            // Nodes near the vertical axis (the top of the ring) stay centred — there is no
-            // "outward" for them, and their clear space is above.
-            const width = (labelHalfWidths[index] ?? 0) * 2;
-            const anchor =
-              projected.x > 0.15 ? 0 : projected.x < -0.15 ? -100 : -50;
-            const bias = (anchor / 100) * width;
-
-            // Clamp the label's own box, then solve back for the transform origin, so the
-            // clamping is correct whichever edge it is anchored by.
-            const rawLeft = (projected.x * 0.5 + 0.5) * rect.width + bias;
-            const left = Math.min(
-              Math.max(rawLeft, 2),
-              Math.max(rect.width - width - 2, 2),
-            );
-            const x = left - bias;
-            const y = clampToStage(
-              (-projected.y * 0.5 + 0.5) * rect.height,
-              labelHalfHeights[index] ?? 0,
-              rect.height,
-            );
-            label.style.transform = `translate3d(${x}px, ${y}px, 0) translate(${anchor}%, -50%)`;
-            label.style.opacity = behind ? "0.35" : "1";
-          }
-        });
-
+        // A gradual tumble: constant rates on all three axes, deliberately incommensurate
+        // so the pose keeps changing without ever visibly looping.
+        markGroup.rotation.x = elapsed * 0.16;
+        markGroup.rotation.y = elapsed * 0.24;
+        markGroup.rotation.z = elapsed * 0.1;
         renderer.render(scene, camera);
       };
 
@@ -431,15 +230,11 @@ export function LoopScene() {
       const onVisibility = () => (document.hidden ? stop() : start());
       document.addEventListener("visibilitychange", onVisibility);
 
-      // Re-read the tokens whenever they could have moved: the OS scheme flipping, or the
+      // Re-read the token whenever it could have moved: the OS scheme flipping, or the
       // colour picker rewriting the custom properties. Both land in the same place, so
       // there is one handler rather than one per source.
       const onPalette = () => {
-        palette = readPalette();
-        markMaterial.color.setStyle(palette.mark);
-        clientMaterial.color.setStyle(palette.client);
-        linkMaterial.color.setStyle(palette.link);
-        pulseMaterial.color.setStyle(palette.pulse);
+        markMaterial.color.setStyle(readMarkColour());
         if (!running) draw(1.6); // repaint the static frame under reduced motion
       };
       schemeQuery.addEventListener("change", onPalette);
@@ -447,19 +242,14 @@ export function LoopScene() {
 
       teardown = () => {
         stop();
-        labelListRef.current?.removeAttribute("data-projected");
         document.removeEventListener("visibilitychange", onVisibility);
         schemeQuery.removeEventListener("change", onPalette);
         window.removeEventListener(PALETTE_EVENT, onPalette);
         resizeObserver.disconnect();
         renderer.domElement.remove();
         renderer.dispose();
-        [nodeGeometry, linkGeometry, pulseGeometry, mark.geometry].forEach((g) =>
-          g.dispose(),
-        );
-        [markMaterial, clientMaterial, linkMaterial, pulseMaterial].forEach((m) =>
-          m.dispose(),
-        );
+        mark.geometry.dispose();
+        markMaterial.dispose();
       };
     })();
 
@@ -470,29 +260,8 @@ export function LoopScene() {
   }, []);
 
   return (
-    <div className={styles.stage}>
-      <div ref={mountRef} className={styles.canvas} aria-hidden="true" />
-      {/* Real text, not sprites. Until the scene reports itself running the list stays in
-          normal flow as a legible row, so a browser with WebGL blocked — or one that never
-          runs the effect at all — still shows which clients connect. `data-projected` is what
-          the scene sets once it can place each label over its node. */}
-      <ul
-        ref={labelListRef}
-        className={styles.labels}
-        aria-label="AI clients Looped In connects to"
-      >
-        {CLIENTS.map((client, index) => (
-          <li
-            key={client.id}
-            className={styles.label}
-            ref={(node) => {
-              labelRefs.current[index] = node;
-            }}
-          >
-            {client.label}
-          </li>
-        ))}
-      </ul>
+    <div className={styles.stage} aria-hidden="true">
+      <div ref={mountRef} className={styles.canvas} />
     </div>
   );
 }
