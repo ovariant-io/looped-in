@@ -24,5 +24,10 @@ __pycache__/
 # of it puts personal data in git history permanently, where deleting the file does not remove it.
 # The importer regenerates data/ from the spreadsheet on demand (ids are deterministic UUIDv5,
 # so a regenerated file is byte-identical), which is what makes this safe to ignore rather than track.
-/*.xlsx
+#
+# The xlsx pattern is deliberately UNANCHORED: the source spreadsheet lives at the repo root
+# today, but a copy dropped into any subdirectory would carry the same personal data, and a
+# root-anchored `/*.xlsx` would happily commit it. There is no spreadsheet in this repo that
+# needs tracking, so the broad rule costs nothing.
+*.xlsx
 /data/

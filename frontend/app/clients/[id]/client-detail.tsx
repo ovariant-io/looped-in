@@ -9,7 +9,7 @@ import {
   updateClient,
   updateContact,
 } from "../actions";
-import { FailureBanner } from "../client-manager";
+import { FailureBanner, type EditTarget } from "../client-manager";
 import { IMPORT_SENTINEL, type ClientDetail, type ContactSummary } from "../types";
 import styles from "../clients.module.css";
 
@@ -21,22 +21,29 @@ import styles from "../clients.module.css";
  *
  * Like the list, it renders straight from props — mutations go through Server Actions that call
  * `refresh()` and new props arrive.
+ *
+ * **An open editor holds the version its form was populated from**, not `client.version` /
+ * `contact.version` read at save time. The inputs are uncontrolled, so their values freeze when
+ * the form mounts while props keep arriving — every contact mutation on this page calls
+ * `refresh()`, and the contact controls stay live underneath an open client form. Reading the
+ * version off current props would let someone else's edit be silently overwritten by values typed
+ * against the older row; the snapshot is what makes that a 409.
  */
 export function ClientDetailView({ client }: { client: ClientDetail }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [failure, setFailure] = useState<{ status: number; message: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState<number | null>(null);
   const [addingContact, setAddingContact] = useState(false);
-  const [editingContactId, setEditingContactId] = useState<string | null>(null);
+  const [editingContact, setEditingContact] = useState<EditTarget | null>(null);
 
   function reset() {
     setFailure(null);
     setNotice(null);
   }
 
-  function onSave(event: FormEvent<HTMLFormElement>) {
+  function onSave(event: FormEvent<HTMLFormElement>, expectedVersion: number) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
 
@@ -50,7 +57,8 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
           location: value(data, "location"),
           notes: value(data, "notes"),
         },
-        client.version,
+        // Captured when the editor opened, not read off props here — see the note above.
+        expectedVersion,
       );
 
       if (!result.ok) {
@@ -58,7 +66,7 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
         return;
       }
 
-      setEditing(false);
+      setEditing(null);
       setNotice("Saved.");
     });
   }
@@ -111,7 +119,7 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
     });
   }
 
-  function onSaveContact(event: FormEvent<HTMLFormElement>, contact: ContactSummary) {
+  function onSaveContact(event: FormEvent<HTMLFormElement>, target: EditTarget) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
 
@@ -119,14 +127,15 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
       reset();
       const result = await updateContact(
         client.id,
-        contact.id,
+        target.id,
         {
           fullName: value(data, "fullName"),
           email: value(data, "email"),
           roleTitle: value(data, "roleTitle"),
           notes: value(data, "notes"),
         },
-        contact.version,
+        // The version this contact's form was populated from — see the note above.
+        target.version,
       );
 
       if (!result.ok) {
@@ -134,7 +143,7 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
         return;
       }
 
-      setEditingContactId(null);
+      setEditingContact(null);
       setNotice("Contact saved.");
     });
   }
@@ -175,8 +184,8 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
         </section>
       ) : null}
 
-      {editing ? (
-        <form className={styles.card} onSubmit={onSave}>
+      {editing !== null ? (
+        <form className={styles.card} onSubmit={(event) => onSave(event, editing)}>
           <p className={styles.cardTitle}>Edit client</p>
           <div className={styles.formGrid}>
             <label className={styles.field}>
@@ -226,7 +235,7 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
               type="button"
               className={styles.button}
               disabled={isPending}
-              onClick={() => setEditing(false)}
+              onClick={() => setEditing(null)}
             >
               Cancel
             </button>
@@ -252,7 +261,8 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
               className={styles.button}
               disabled={isPending}
               onClick={() => {
-                setEditing(true);
+                // Capture the version now, in the same render the defaultValues come from.
+                setEditing(client.version);
                 reset();
               }}
             >
@@ -304,12 +314,16 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
 
       {client.contacts.length > 0 ? (
         <ul className={styles.contactList}>
-          {client.contacts.map((contact) =>
-            editingContactId === contact.id ? (
+          {client.contacts.map((contact) => {
+            // Narrowed to the snapshot taken when Edit was clicked, so the version handed to
+            // onSaveContact always belongs to the same render as the inputs' defaultValues.
+            const target = editingContact?.id === contact.id ? editingContact : null;
+
+            return target ? (
               <li key={contact.id} className={styles.contact}>
                 <form
                   className={styles.fullWidth}
-                  onSubmit={(event) => onSaveContact(event, contact)}
+                  onSubmit={(event) => onSaveContact(event, target)}
                 >
                   <ContactFields contact={contact} />
                   <div className={styles.formActions}>
@@ -324,7 +338,7 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
                       type="button"
                       className={`${styles.button} ${styles.small}`}
                       disabled={isPending}
-                      onClick={() => setEditingContactId(null)}
+                      onClick={() => setEditingContact(null)}
                     >
                       Cancel
                     </button>
@@ -357,7 +371,7 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
                     className={`${styles.button} ${styles.small}`}
                     disabled={isPending}
                     onClick={() => {
-                      setEditingContactId(contact.id);
+                      setEditingContact({ id: contact.id, version: contact.version });
                       reset();
                     }}
                   >
@@ -373,8 +387,8 @@ export function ClientDetailView({ client }: { client: ClientDetail }) {
                   </button>
                 </div>
               </li>
-            ),
-          )}
+            );
+          })}
         </ul>
       ) : null}
     </div>
@@ -395,10 +409,19 @@ function ContactFields({ contact }: { contact?: ContactSummary }) {
       </label>
       <label className={styles.field}>
         <span className={styles.label}>Email</span>
+        {/* Deliberately NOT type="email". The browser's built-in check is stricter than the
+            API's `IsPlausibleEmail`, which tolerates a trailing dot on purpose — three seeded
+            contacts have addresses ending in a full stop, and the two validators (C# and the
+            importer) were aligned specifically so those rows stay editable. type="email" would
+            re-impose the rejection here and block the form outright, so you could not even fix
+            such a contact's role without first altering an address that is correct as recorded.
+            inputMode keeps the mobile keyboard; the server stays the single source of truth. */}
         <input
           className={styles.input}
           name="email"
-          type="email"
+          type="text"
+          inputMode="email"
+          autoComplete="email"
           defaultValue={contact?.email ?? ""}
           maxLength={320}
         />

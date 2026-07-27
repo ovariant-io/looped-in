@@ -21,14 +21,24 @@ namespace LoopedIn.Api.Infrastructure.Http;
 /// the insert, but a check-then-insert has a race, and the losing request must land on the same
 /// answer the pre-check gives — not a 503 implying the database is broken, and certainly not a 500.
 /// </para>
+/// <para>
+/// <b>A runtime failure is logged in full and reported in outline.</b> Npgsql's exception messages
+/// name the host, port, and database they failed to reach; the 503 body is rendered verbatim to
+/// whoever is signed in, so echoing it would publish the Neon endpoint to every user. The detail
+/// belongs in the logs, where an operator can act on it. This is the opposite of the
+/// <em>configuration</em> reasons in <see cref="DatabaseState"/>, which are written to be read by
+/// the person who has to fix them and say nothing a caller could not already guess.
+/// </para>
 /// </remarks>
 public sealed class DatabaseGateFilter : IEndpointFilter
 {
     private readonly DatabaseState _state;
+    private readonly ILogger<DatabaseGateFilter> _logger;
 
-    public DatabaseGateFilter(DatabaseState state)
+    public DatabaseGateFilter(DatabaseState state, ILogger<DatabaseGateFilter> logger)
     {
         _state = state;
+        _logger = logger;
     }
 
     public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
@@ -66,8 +76,15 @@ public sealed class DatabaseGateFilter : IEndpointFilter
             // Covers connection failures, command timeouts, and every Postgres error that is not
             // one this API turns into a specific answer. From the caller's side the database is
             // simply unavailable — the same shape unconfigured storage reports.
+            _logger.LogError(
+                ex,
+                "A database call failed handling {Method} {Path}.",
+                context.HttpContext.Request.Method,
+                context.HttpContext.Request.Path);
+
             return Results.Problem(
-                $"The database is unavailable: {ex.Message}",
+                "The database is temporarily unavailable. Try again in a moment — the API logs carry "
+                    + "the detail.",
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
     }

@@ -257,7 +257,7 @@ public sealed class ClientStore
                 // Zero rows means either "no such client" or "someone else got there first".
                 // One extra query tells the two apart, and the caller needs to: a 404 and a 409
                 // ask the user to do completely different things.
-                return await ExistsAsync("clients", "id", id, cancellationToken)
+                return await ClientExistsAsync(id, cancellationToken)
                     ? MutationResult<ClientDetail>.VersionConflict()
                     : MutationResult<ClientDetail>.NotFound();
             }
@@ -334,7 +334,13 @@ public sealed class ClientStore
         var conflict = await CheckContactAsync(clientId, fields.Email, excluding: contactId, cancellationToken);
         if (conflict is not null)
         {
-            return conflict;
+            // A sibling holding this email says nothing about whether the contact being edited
+            // exists. Reporting 409 for an id that was never there would send the user off to
+            // reload a row that is gone, so confirm it first — one extra query, and only on the
+            // already-rare conflict path.
+            return await ContactExistsAsync(clientId, contactId, cancellationToken)
+                ? conflict
+                : MutationResult<ContactSummary>.NotFound();
         }
 
         await using var command = _dataSource.CreateCommand($"""
@@ -418,10 +424,9 @@ public sealed class ClientStore
                 : $"This client already has a contact with the email {existing} ({name}).");
     }
 
-    private async Task<bool> ExistsAsync(string table, string column, Guid id, CancellationToken cancellationToken)
+    private async Task<bool> ClientExistsAsync(Guid id, CancellationToken cancellationToken)
     {
-        // table/column are compile-time constants from this file only — never request input.
-        await using var command = _dataSource.CreateCommand($"select 1 from {table} where {column} = @id");
+        await using var command = _dataSource.CreateCommand("select 1 from clients where id = @id");
         command.Parameters.Add(Uuid("id", id));
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }

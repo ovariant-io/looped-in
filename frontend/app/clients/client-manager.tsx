@@ -19,6 +19,14 @@ import styles from "./clients.module.css";
  * cannot call the backend: it navigates, the server component re-reads `searchParams` and
  * re-fetches. Local state here covers only what the server does not know — which row is open for
  * editing, and the last failure or notice.
+ *
+ * **The open editor carries its own version**, rather than reading `client.version` off props at
+ * save time. The two are not the same thing: the inputs are uncontrolled, so their values freeze
+ * when the editor mounts, while props keep arriving — from this user's own `refresh()` after
+ * another mutation, or from a search. If someone else saved this row in between, a version read
+ * from live props would match, the PATCH would succeed, and their edit would be overwritten by
+ * form values typed against the older row. Snapshotting the version alongside the values the form
+ * was populated from is what makes the 409 fire.
  */
 export function ClientManager({
   clients,
@@ -40,7 +48,7 @@ export function ClientManager({
   const [failure, setFailure] = useState<Failure | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<EditTarget | null>(null);
 
   const page = Math.floor(offset / limit) + 1;
   const firstRow = clients.length === 0 ? 0 : offset + 1;
@@ -102,7 +110,7 @@ export function ClientManager({
     });
   }
 
-  function onSaveRow(event: FormEvent<HTMLFormElement>, client: ClientSummary) {
+  function onSaveRow(event: FormEvent<HTMLFormElement>, target: EditTarget) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
 
@@ -111,15 +119,16 @@ export function ClientManager({
       setNotice(null);
 
       const result = await updateClientFromRow(
-        client.id,
+        target.id,
         {
           name: value(data, "name") ?? "",
           industry: value(data, "industry"),
           location: value(data, "location"),
         },
-        // The version this row was RENDERED with, not a fresh one — that is what makes a
+        // The version the form was POPULATED from, captured when the editor opened — not
+        // `client.version` off current props, which may have moved on since. That is what makes a
         // simultaneous edit by someone else a 409 instead of a silent overwrite.
-        client.version,
+        target.version,
       );
 
       if (!result.ok) {
@@ -127,7 +136,7 @@ export function ClientManager({
         return;
       }
 
-      setEditingId(null);
+      setEditing(null);
       setNotice(`Saved “${result.data.name}”.`);
     });
   }
@@ -283,11 +292,15 @@ export function ClientManager({
               </tr>
             </thead>
             <tbody>
-              {clients.map((client) =>
-                editingId === client.id ? (
+              {clients.map((client) => {
+                // Narrowed to the snapshot taken when Edit was clicked, so the version handed to
+                // onSaveRow always belongs to the same render as the inputs' defaultValues.
+                const target = editing?.id === client.id ? editing : null;
+
+                return target ? (
                   <tr key={client.id} className={styles.editRow}>
                     <td colSpan={6}>
-                      <form onSubmit={(event) => onSaveRow(event, client)}>
+                      <form onSubmit={(event) => onSaveRow(event, target)}>
                         <div className={styles.editGrid}>
                           <label className={styles.field}>
                             <span className={styles.label}>Name</span>
@@ -331,7 +344,7 @@ export function ClientManager({
                             type="button"
                             className={`${styles.button} ${styles.small}`}
                             disabled={isPending}
-                            onClick={() => setEditingId(null)}
+                            onClick={() => setEditing(null)}
                           >
                             Cancel
                           </button>
@@ -362,7 +375,9 @@ export function ClientManager({
                           className={`${styles.button} ${styles.small}`}
                           disabled={isPending}
                           onClick={() => {
-                            setEditingId(client.id);
+                            // Capture the version now, in the same render the form's
+                            // defaultValues come from.
+                            setEditing({ id: client.id, version: client.version });
                             setFailure(null);
                             setNotice(null);
                           }}
@@ -380,8 +395,8 @@ export function ClientManager({
                       </div>
                     </td>
                   </tr>
-                ),
-              )}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -415,6 +430,16 @@ export function ClientManager({
     </div>
   );
 }
+
+/**
+ * The row currently open for editing, and the version its form was populated from.
+ *
+ * The version has to live here rather than be read from props at save time: the inputs are
+ * uncontrolled, so they hold whatever was on screen when the editor mounted, while props keep
+ * arriving. Pairing the two in one piece of state is what keeps the optimistic-concurrency token
+ * honest — it always describes the row the user actually edited.
+ */
+export type EditTarget = { id: string; version: number };
 
 export type Failure = { status: number; message: string };
 
