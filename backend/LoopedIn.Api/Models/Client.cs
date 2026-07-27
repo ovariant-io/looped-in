@@ -22,17 +22,28 @@ public sealed record ClientSummary(
     string Name,
     string? Industry,
     string? Location,
+    string Status,
     int ContactCount,
     long Version,
     DateTimeOffset UpdatedAt);
 
-/// <summary>One client with its contacts.</summary>
+/// <summary>
+/// One client with its contacts. <paramref name="Status"/>, <paramref name="AcquiredAt"/> and
+/// <paramref name="LostReason"/> move only through <c>POST /clients/{id}/status</c> — PATCH
+/// replaces the descriptive fields and deliberately cannot touch the lifecycle ones, which is
+/// what keeps the <c>clients_lost_reason_shape</c> CHECK unviolable from a field edit.
+/// </summary>
 public sealed record ClientDetail(
     Guid Id,
     string Name,
     string? Industry,
     string? Location,
     string? Notes,
+    string Status,
+    DateOnly? AcquiredAt,
+    string? Source,
+    string? Owner,
+    string? LostReason,
     IReadOnlyList<ContactSummary> Contacts,
     long Version,
     DateTimeOffset CreatedAt,
@@ -74,17 +85,77 @@ public sealed record ClientListResponse(
 public sealed record CreateClientResponse(ClientDetail Client, string? Warning);
 
 /// <summary>Body of <c>POST /clients</c>.</summary>
-public sealed record CreateClientRequest(string? Name, string? Industry, string? Location, string? Notes);
+public sealed record CreateClientRequest(
+    string? Name,
+    string? Industry,
+    string? Location,
+    string? Notes,
+    string? Source,
+    string? Owner);
 
 /// <summary>
 /// Body of <c>PATCH /clients/{id}</c>. <paramref name="ExpectedVersion"/> is required — an
 /// optional concurrency token is decorative protection the day the UI forgets to send it.
+/// Carries <paramref name="Source"/> and <paramref name="Owner"/> but never status — see
+/// <see cref="ChangeClientStatusRequest"/>.
 /// </summary>
 public sealed record UpdateClientRequest(
     string? Name,
     string? Industry,
     string? Location,
     string? Notes,
+    string? Source,
+    string? Owner,
+    long? ExpectedVersion);
+
+/// <summary>
+/// Body of <c>POST /clients/{id}/status</c> — the only way a client's status moves. A dedicated
+/// endpoint rather than more PATCH fields because a transition is an event (it appends to
+/// <c>client_status_history</c> and may set <c>acquired_at</c>), and because folding status into
+/// a full-replacement PATCH would put it one forgotten form field away from being wiped.
+/// <paramref name="LostReason"/> only accompanies a change to <c>lost</c>.
+/// </summary>
+public sealed record ChangeClientStatusRequest(string? Status, string? LostReason, long? ExpectedVersion);
+
+/// <summary>One recorded status transition. Immutable — there is no version and no update.</summary>
+public sealed record StatusHistoryEntry(
+    Guid Id,
+    string FromStatus,
+    string ToStatus,
+    DateTimeOffset ChangedAt,
+    string ChangedBy);
+
+/// <summary>
+/// One logged interaction with a client. Unlike <see cref="ContactSummary"/> this carries
+/// <paramref name="CreatedBy"/> — who logged the touch is half the point of a log.
+/// </summary>
+public sealed record InteractionSummary(
+    Guid Id,
+    Guid? ContactId,
+    string Kind,
+    DateOnly OccurredOn,
+    string Summary,
+    DateOnly? FollowUpOn,
+    long Version,
+    DateTimeOffset CreatedAt,
+    string CreatedBy,
+    DateTimeOffset UpdatedAt);
+
+/// <summary>Body of <c>POST /clients/{id}/interactions</c>.</summary>
+public sealed record CreateInteractionRequest(
+    string? Kind,
+    DateOnly? OccurredOn,
+    string? Summary,
+    DateOnly? FollowUpOn,
+    Guid? ContactId);
+
+/// <summary>Body of <c>PATCH /clients/{id}/interactions/{interactionId}</c>.</summary>
+public sealed record UpdateInteractionRequest(
+    string? Kind,
+    DateOnly? OccurredOn,
+    string? Summary,
+    DateOnly? FollowUpOn,
+    Guid? ContactId,
     long? ExpectedVersion);
 
 /// <summary>Body of <c>POST /clients/{id}/contacts</c>.</summary>

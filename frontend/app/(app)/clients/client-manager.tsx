@@ -4,7 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { createClient, deleteClient, updateClientFromRow } from "./actions";
-import type { ClientSummary } from "./types";
+import {
+  CLIENT_STATUSES,
+  STATUS_LABELS,
+  type ClientStatus,
+  type ClientSummary,
+} from "./types";
 import styles from "./clients.module.css";
 
 /**
@@ -35,6 +40,7 @@ export function ClientManager({
   limit,
   search,
   industry,
+  status,
 }: {
   clients: ClientSummary[];
   total: number;
@@ -42,6 +48,7 @@ export function ClientManager({
   limit: number;
   search: string;
   industry: string;
+  status: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -53,12 +60,18 @@ export function ClientManager({
   const page = Math.floor(offset / limit) + 1;
   const firstRow = clients.length === 0 ? 0 : offset + 1;
   const lastRow = offset + clients.length;
-  const filtered = search !== "" || industry !== "";
+  const filtered = search !== "" || industry !== "" || status !== "";
 
-  function navigate(next: { search?: string; industry?: string; page?: number }) {
+  function navigate(next: {
+    search?: string;
+    industry?: string;
+    status?: string;
+    page?: number;
+  }) {
     const query = new URLSearchParams();
     const nextSearch = next.search ?? search;
     const nextIndustry = next.industry ?? industry;
+    const nextStatus = next.status ?? status;
     const nextPage = next.page ?? 1;
 
     if (nextSearch) {
@@ -66,6 +79,9 @@ export function ClientManager({
     }
     if (nextIndustry) {
       query.set("industry", nextIndustry);
+    }
+    if (nextStatus) {
+      query.set("status", nextStatus);
     }
     if (nextPage > 1) {
       query.set("page", String(nextPage));
@@ -96,6 +112,9 @@ export function ClientManager({
         industry: value(data, "industry"),
         location: value(data, "location"),
         notes: value(data, "notes"),
+        // Not on this form — a new client starts unsourced and unowned, at the 'lead' default.
+        source: null,
+        owner: null,
       });
 
       if (!result.ok) {
@@ -187,12 +206,29 @@ export function ClientManager({
               type="button"
               className={styles.button}
               disabled={isPending}
-              onClick={() => navigate({ search: "", industry: "", page: 1 })}
+              onClick={() => navigate({ search: "", industry: "", status: "", page: 1 })}
             >
               Clear
             </button>
           ) : null}
         </form>
+
+        {/* URL-driven like the search box — the select's value IS the ?status= param, so there
+            is no local state to fall out of step with the server component's fetch. */}
+        <select
+          className={styles.input}
+          value={status}
+          aria-label="Filter by status"
+          disabled={isPending}
+          onChange={(event) => navigate({ status: event.target.value, page: 1 })}
+        >
+          <option value="">All statuses</option>
+          {CLIENT_STATUSES.map((value) => (
+            <option key={value} value={value}>
+              {STATUS_LABELS[value]}
+            </option>
+          ))}
+        </select>
 
         <button
           type="button"
@@ -265,7 +301,7 @@ export function ClientManager({
             <button
               type="button"
               className={styles.button}
-              onClick={() => navigate({ search: "", industry: "", page: 1 })}
+              onClick={() => navigate({ search: "", industry: "", status: "", page: 1 })}
             >
               Show all clients
             </button>
@@ -284,6 +320,7 @@ export function ClientManager({
                 <th scope="col">Client</th>
                 <th scope="col">Industry</th>
                 <th scope="col">Location</th>
+                <th scope="col">Status</th>
                 <th scope="col">Contacts</th>
                 <th scope="col">Updated</th>
                 <th scope="col">
@@ -299,7 +336,7 @@ export function ClientManager({
 
                 return target ? (
                   <tr key={client.id} className={styles.editRow}>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <form onSubmit={(event) => onSaveRow(event, target)}>
                         <div className={styles.editGrid}>
                           <label className={styles.field}>
@@ -364,6 +401,11 @@ export function ClientManager({
                     </td>
                     <td>{client.industry ?? <span className={styles.count}>—</span>}</td>
                     <td>{client.location ?? <span className={styles.count}>—</span>}</td>
+                    <td>
+                      <span className={badgeClass(client.status)}>
+                        {STATUS_LABELS[client.status]}
+                      </span>
+                    </td>
                     <td className={styles.count}>{client.contactCount}</td>
                     {/* Sliced, not parsed: a Date here would format against the server's
                         timezone during SSR and the browser's after hydration. */}
@@ -472,6 +514,30 @@ export function FailureBanner({
       ) : null}
     </section>
   );
+}
+
+/**
+ * Status → badge class pair, shared with the detail page.
+ *
+ * Statuses group by what they mean for the pipeline rather than 1:1: the three engaged states
+ * share the theme-derived accent (they survive any picker palette), while won/lost borrow the
+ * same green/red the app's other correctness signals use — deliberately non-themeable, like the
+ * contrast badges in the colour picker.
+ */
+export function badgeClass(status: ClientStatus): string {
+  switch (status) {
+    case "contacted":
+    case "in_discussion":
+    case "proposal_sent":
+      return `${styles.badge} ${styles.badgeEngaged}`;
+    case "active_client":
+      return `${styles.badge} ${styles.badgeActive}`;
+    case "lost":
+    case "do_not_contact":
+      return `${styles.badge} ${styles.badgeLost}`;
+    default: // lead, former_client — the neutral resting states
+      return styles.badge;
+  }
 }
 
 /** Trimmed form value, with empty meaning "clear this field" — PATCH replaces, it never merges. */

@@ -46,26 +46,38 @@ public static class ClientEndpoints
         clients.MapPatch("/{id:guid}", UpdateAsync).WithName("UpdateClient");
         clients.MapDelete("/{id:guid}", DeleteAsync).WithName("DeleteClient");
 
+        clients.MapPost("/{id:guid}/status", ChangeStatusAsync).WithName("ChangeClientStatus");
+        clients.MapGet("/{id:guid}/status-history", ListStatusHistoryAsync).WithName("ListClientStatusHistory");
+
         clients.MapPost("/{id:guid}/contacts", AddContactAsync).WithName("AddClientContact");
         clients.MapPatch("/{id:guid}/contacts/{contactId:guid}", UpdateContactAsync).WithName("UpdateClientContact");
         clients.MapDelete("/{id:guid}/contacts/{contactId:guid}", DeleteContactAsync).WithName("DeleteClientContact");
+
+        clients.MapGet("/{id:guid}/interactions", ListInteractionsAsync).WithName("ListClientInteractions");
+        clients.MapPost("/{id:guid}/interactions", AddInteractionAsync).WithName("AddClientInteraction");
+        clients.MapPatch("/{id:guid}/interactions/{interactionId:guid}", UpdateInteractionAsync)
+            .WithName("UpdateClientInteraction");
+        clients.MapDelete("/{id:guid}/interactions/{interactionId:guid}", DeleteInteractionAsync)
+            .WithName("DeleteClientInteraction");
 
         return app;
     }
 
     /// <summary>
-    /// A page of clients, filtered by <c>?search=</c> and <c>?industry=</c>.
+    /// A page of clients, filtered by <c>?search=</c>, <c>?industry=</c> and <c>?status=</c>.
     /// </summary>
     private static async Task<IResult> ListAsync(
         IServiceProvider services,
         string? search,
         string? industry,
+        string? status,
         int? limit,
         int? offset,
         CancellationToken cancellationToken) =>
         Results.Ok(await Store(services).ListAsync(
             ClientValidation.SearchPattern(search),
             ClientValidation.Clean(industry),
+            ClientValidation.Clean(status),
             ClientValidation.PageSize(limit),
             ClientValidation.PageOffset(offset),
             cancellationToken));
@@ -126,6 +138,47 @@ public static class ClientEndpoints
         Guid id,
         CancellationToken cancellationToken) =>
         await Store(services).DeleteAsync(id, cancellationToken) ? Results.NoContent() : ClientNotFound();
+
+    /// <summary>
+    /// The one route that moves a client's status. A transition is an event, not a field edit:
+    /// it appends to the history and may stamp <c>acquired_at</c>, which is why it does not ride
+    /// on the full-replacement PATCH.
+    /// </summary>
+    private static async Task<IResult> ChangeStatusAsync(
+        IServiceProvider services,
+        ClaimsPrincipal user,
+        Guid id,
+        ChangeClientStatusRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request?.ExpectedVersion is not { } expectedVersion)
+        {
+            return MissingVersion("client");
+        }
+
+        if (!ClientValidation.TryReadStatusChange(request, out var change, out var error))
+        {
+            return BadRequest(error);
+        }
+
+        var result = await Store(services).ChangeStatusAsync(
+            id, change, expectedVersion, user.RequireSubject(), cancellationToken);
+
+        return result.Status switch
+        {
+            MutationStatus.Applied => Results.Ok(result.Value),
+            MutationStatus.VersionConflict => Stale("client"),
+            _ => ClientNotFound(),
+        };
+    }
+
+    private static async Task<IResult> ListStatusHistoryAsync(
+        IServiceProvider services,
+        Guid id,
+        CancellationToken cancellationToken) =>
+        await Store(services).ListStatusHistoryAsync(id, cancellationToken) is { } history
+            ? Results.Ok(history)
+            : ClientNotFound();
 
     private static async Task<IResult> AddContactAsync(
         IServiceProvider services,
@@ -189,6 +242,76 @@ public static class ClientEndpoints
             ? Results.NoContent()
             : ContactNotFound();
 
+    private static async Task<IResult> ListInteractionsAsync(
+        IServiceProvider services,
+        Guid id,
+        CancellationToken cancellationToken) =>
+        await Store(services).ListInteractionsAsync(id, cancellationToken) is { } interactions
+            ? Results.Ok(interactions)
+            : ClientNotFound();
+
+    private static async Task<IResult> AddInteractionAsync(
+        IServiceProvider services,
+        ClaimsPrincipal user,
+        Guid id,
+        CreateInteractionRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (!ClientValidation.TryReadInteraction(request, out var fields, out var error))
+        {
+            return BadRequest(error);
+        }
+
+        var result = await Store(services).AddInteractionAsync(
+            id, fields, user.RequireSubject(), cancellationToken);
+
+        return result.Status switch
+        {
+            MutationStatus.Applied => Results.Created($"/clients/{id}", result.Value),
+            MutationStatus.InvalidReference => BadRequest(result.Message!),
+            _ => ClientNotFound(),
+        };
+    }
+
+    private static async Task<IResult> UpdateInteractionAsync(
+        IServiceProvider services,
+        ClaimsPrincipal user,
+        Guid id,
+        Guid interactionId,
+        UpdateInteractionRequest? request,
+        CancellationToken cancellationToken)
+    {
+        if (request?.ExpectedVersion is not { } expectedVersion)
+        {
+            return MissingVersion("interaction");
+        }
+
+        if (!ClientValidation.TryReadInteraction(request, out var fields, out var error))
+        {
+            return BadRequest(error);
+        }
+
+        var result = await Store(services).UpdateInteractionAsync(
+            id, interactionId, fields, expectedVersion, user.RequireSubject(), cancellationToken);
+
+        return result.Status switch
+        {
+            MutationStatus.Applied => Results.Ok(result.Value),
+            MutationStatus.VersionConflict => Stale("interaction"),
+            MutationStatus.InvalidReference => BadRequest(result.Message!),
+            _ => InteractionNotFound(),
+        };
+    }
+
+    private static async Task<IResult> DeleteInteractionAsync(
+        IServiceProvider services,
+        Guid id,
+        Guid interactionId,
+        CancellationToken cancellationToken) =>
+        await Store(services).DeleteInteractionAsync(id, interactionId, cancellationToken)
+            ? Results.NoContent()
+            : InteractionNotFound();
+
     /// <summary>
     /// Resolved per request rather than taken as a handler parameter, because the store is only
     /// registered when <c>DATABASE_URL</c> is set — and minimal-API parameter binding happens
@@ -206,6 +329,9 @@ public static class ClientEndpoints
 
     private static IResult ContactNotFound() =>
         Results.Problem("Contact not found.", statusCode: StatusCodes.Status404NotFound);
+
+    private static IResult InteractionNotFound() =>
+        Results.Problem("Interaction not found.", statusCode: StatusCodes.Status404NotFound);
 
     private static IResult Duplicate(string? message) =>
         Results.Problem(

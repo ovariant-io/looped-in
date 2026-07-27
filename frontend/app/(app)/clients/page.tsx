@@ -3,7 +3,12 @@ import { Suspense } from "react";
 import { callBackend } from "@/app/lib/backend";
 import { ApiError } from "./api-error";
 import { ClientManager } from "./client-manager";
-import { PAGE_SIZE, type ClientListResponse } from "./types";
+import {
+  CLIENT_STATUSES,
+  PAGE_SIZE,
+  type ClientListResponse,
+  type ClientStatus,
+} from "./types";
 import styles from "./clients.module.css";
 
 export const metadata: Metadata = {
@@ -43,6 +48,7 @@ async function ClientList({ searchParams }: { searchParams: SearchParams }) {
   const params = await searchParams;
   const search = single(params.search);
   const industry = single(params.industry);
+  const status = statusFilter(single(params.status));
   const page = pageNumber(single(params.page));
 
   const query = new URLSearchParams({
@@ -54,6 +60,9 @@ async function ClientList({ searchParams }: { searchParams: SearchParams }) {
   }
   if (industry) {
     query.set("industry", industry);
+  }
+  if (status) {
+    query.set("status", status);
   }
 
   const result = await callBackend<ClientListResponse>(`/clients?${query}`);
@@ -70,6 +79,7 @@ async function ClientList({ searchParams }: { searchParams: SearchParams }) {
       limit={result.data.limit}
       search={search}
       industry={industry}
+      status={status}
     />
   );
 }
@@ -77,6 +87,16 @@ async function ClientList({ searchParams }: { searchParams: SearchParams }) {
 /** A repeated query parameter arrives as an array; take the first and ignore the rest. */
 function single(value: string | string[] | undefined): string {
   return (Array.isArray(value) ? value[0] : value)?.trim() ?? "";
+}
+
+/**
+ * A hand-typed junk value would render a `<select>` with no matching option and a filter that
+ * matches nothing — treat it as "no filter" instead.
+ */
+function statusFilter(value: string): "" | ClientStatus {
+  return (CLIENT_STATUSES as readonly string[]).includes(value)
+    ? (value as ClientStatus)
+    : "";
 }
 
 function pageNumber(value: string): number {

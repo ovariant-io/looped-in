@@ -243,6 +243,40 @@
   color: color-mix(in srgb, var(--foreground) 60%, transparent);
 }
 
+/*
+ * Status badges. The neutral base covers the resting states (lead, former client); the engaged
+ * modifier derives from --li-rule like .conflict/.notice, so it re-themes with any picker
+ * palette; won/lost use the same green/red the app's other correctness signals do (see
+ * colour-picker.module.css) — a pipeline outcome is a signal, not a decoration.
+ */
+.badge {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--li-radius-button);
+  border: 1px solid var(--li-line);
+  background: var(--li-surface);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  white-space: nowrap;
+}
+
+.badgeEngaged {
+  border-color: color-mix(in srgb, var(--li-rule) 55%, transparent);
+  background: color-mix(in srgb, var(--li-rule) 10%, transparent);
+}
+
+.badgeActive {
+  border-color: color-mix(in srgb, #16a34a 40%, transparent);
+  background: color-mix(in srgb, #16a34a 8%, transparent);
+}
+
+.badgeLost {
+  border-color: color-mix(in srgb, #dc2626 35%, transparent);
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+}
+
 .rowActions {
   display: flex;
   gap: 6px;
@@ -379,6 +413,16 @@
   line-height: 1.5;
   white-space: pre-wrap;
   color: color-mix(in srgb, var(--foreground) 58%, transparent);
+}
+
+/* The status-transition audit, kept deliberately quiet — same voice as .provenance. */
+.history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--li-meta);
 }
 
 .provenance {
