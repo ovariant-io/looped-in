@@ -146,6 +146,8 @@ public static class CampaignEndpoints
 
         return result.Status switch
         {
+            // Location names the campaign, not the message: a message has no GET route of its
+            // own — the campaign detail is the nearest URL at which the new draft is readable.
             MutationStatus.Applied => Results.Created($"/campaigns/{id}", result.Value),
             MutationStatus.InvalidReference => BadRequest(result.Message!),
             _ => CampaignNotFound(),

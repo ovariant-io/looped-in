@@ -22,6 +22,13 @@ namespace LoopedIn.Api.Infrastructure.Http;
 /// answer the pre-check gives — not a 503 implying the database is broken, and certainly not a 500.
 /// </para>
 /// <para>
+/// <b>Foreign-key violations are a 409 for the same reason.</b> Every store validates its
+/// references inside the writing statement, so a 23503 that still surfaces means the referenced
+/// row was deleted between that snapshot and the constraint check — a concurrent edit, the exact
+/// thing a version conflict reports, not a broken database. (A truly simultaneous delete can
+/// still resolve as a deadlock, which stays a 503; without retries that window is irreducible.)
+/// </para>
+/// <para>
 /// <b>A runtime failure is logged in full and reported in outline.</b> Npgsql's exception messages
 /// name the host, port, and database they failed to reach; the 503 body is rendered verbatim to
 /// whoever is signed in, so echoing it would publish the Neon endpoint to every user. The detail
@@ -74,6 +81,12 @@ public sealed class DatabaseGateFilter : IEndpointFilter
                         "This client already has a draft in this campaign — edit that message instead of adding a second.",
                     _ => "That change conflicts with an existing record. Reload and try again.",
                 },
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+        {
+            return Results.Problem(
+                "Something this change refers to was just deleted by someone else. Reload and try again.",
                 statusCode: StatusCodes.Status409Conflict);
         }
         catch (NpgsqlException ex)

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent, type ReactNode } from "react";
 import { FailureBanner, type Failure } from "@/app/(app)/clients/client-manager";
 import { createCampaign } from "./actions";
 import {
@@ -34,7 +34,9 @@ export function CampaignManager({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // ReactNode rather than string so the create notice can link to the new campaign — the
+  // next step after creating one is drafting into it, which lives on its detail page.
+  const [notice, setNotice] = useState<ReactNode | null>(null);
   const [creating, setCreating] = useState(false);
 
   const page = Math.floor(offset / limit) + 1;
@@ -85,7 +87,15 @@ export function CampaignManager({
 
       form.reset();
       setCreating(false);
-      setNotice(`Created “${result.data.name}”.`);
+      setNotice(
+        <>
+          Created{" "}
+          <Link href={`/campaigns/${result.data.id}`} className={styles.nameLink}>
+            “{result.data.name}”
+          </Link>{" "}
+          — open it to add drafts.
+        </>,
+      );
     });
   }
 

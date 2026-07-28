@@ -309,8 +309,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         Confirm with the user before deleting anything real.
         """
         api = require_api(deps)
+        # Canonicalized once, here — _client_path would just re-validate the same string.
         canonical = uuid_arg(client_id, "client id")
-        await api.delete(_client_path(canonical), token=caller_token())
+        await api.delete(f"/clients/{canonical}", token=caller_token())
         return {"deleted": canonical}
 
     @mcp.tool(annotations=ADDITIVE)
