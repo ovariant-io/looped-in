@@ -66,9 +66,14 @@ public sealed class DatabaseGateFilter : IEndpointFilter
         catch (PostgresException ex) when (ex.SqlState == PostgresErrorCodes.UniqueViolation)
         {
             return Results.Problem(
-                ex.ConstraintName == "contacts_client_email_uniq"
-                    ? "Another contact with that email address was just added to this client. Reload and try again."
-                    : "That change conflicts with an existing record. Reload and try again.",
+                ex.ConstraintName switch
+                {
+                    "contacts_client_email_uniq" =>
+                        "Another contact with that email address was just added to this client. Reload and try again.",
+                    "campaign_messages_campaign_client_uniq" =>
+                        "This client already has a draft in this campaign — edit that message instead of adding a second.",
+                    _ => "That change conflicts with an existing record. Reload and try again.",
+                },
                 statusCode: StatusCodes.Status409Conflict);
         }
         catch (NpgsqlException ex)
