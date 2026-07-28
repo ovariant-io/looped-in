@@ -4,8 +4,8 @@ A [FastMCP](https://gofastmcp.com) server that authenticates callers with
 **Clerk** via OAuth **Dynamic Client Registration (DCR)**, so Claude (and any
 other MCP client) can act against Looped In as the signed-in user.
 
-This is the **scaffold**: the auth chain is complete and proven end to end, and
-the tool surface is deliberately small. It exposes two tools —
+The auth chain is complete and proven end to end. The tool surface starts with
+two identity tools —
 
 - **`whoami`** — echoes the verified Clerk identity (`sub`, `email`, `iss`) from
   the caller's token. Proves the near half of the chain: MCP client → Clerk →
@@ -15,7 +15,21 @@ the tool surface is deliberately small. It exposes two tools —
   what the API saw. Proves the far half: this server → the Looped In API. It is
   the MCP counterpart of the frontend's `/me` page.
 
-— plus an unauthenticated `GET /health`.
+— plus **read-only client-pipeline tools** (`tools/clients.py`), mapping 1:1
+onto the API's GET surface under `/clients`. The list is shared team data, so
+these answer "what is the state of *our* pipeline":
+
+- **`list_clients`** — paged summaries with `search` / `industry` / `status`
+  filters (`status` is a closed set in the tool schema, so a bad value is
+  refused rather than silently unfiltered as the API's `?status=` would be).
+- **`get_client`** — one client in full, including contacts and the prose and
+  lifecycle fields the summaries omit.
+- **`get_client_status_history`** — the append-only transition audit trail.
+- **`list_client_interactions`** — the per-client outreach log.
+
+There is deliberately **no write surface yet** — mutations need the API's
+`expectedVersion` concurrency flow and a considered answer to how much an agent
+may change a shared list. An unauthenticated `GET /health` rounds things out.
 
 Adding a domain is a new module under `looped_in_mcp/tools/` and one line in
 `registry.py`; tools stay thin (validate input → call `deps.api` → shape the
@@ -211,7 +225,7 @@ API), and **tools** (one module per domain).
 | `looped_in_mcp/backend.py` | `LoopedInApiClient` — the **single seam** to the .NET API (token forwarding, RFC 7807 error mapping). |
 | `looped_in_mcp/deps.py` | `Deps` — shared resources (the API client) handed to each tool module. |
 | `looped_in_mcp/app.py` | `create_app()` — assembles auth + deps + tools + middleware into the ASGI app. |
-| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the `READ_ONLY` annotations constant. `identity.py` → `whoami` + `my_api_identity`. |
+| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the `READ_ONLY` annotations constant. `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the read-only client-pipeline tools. |
 | `requirements.txt` | Local dev ranges: `fastmcp` (3.x), `pydantic`, `httpx`, `python-dotenv`, `mangum` (Lambda), `uvicorn` (local). |
 | `requirements-lambda.lock` | Hash-locked, platform-pinned install used by the deploy. |
 | `Dockerfile` | `python:3.13-slim`, non-root, used by the `mcp` Compose profile. |
