@@ -154,7 +154,11 @@ Set `SERVER_BASE_URL` in `.env.local` to that HTTPS URL and **restart**
    result means the server can act against the .NET API on your behalf. ✅
 
 The deployed app shows the same instructions at **`/connect`**, with the live
-connection link filled in.
+connection link filled in — a per-client guide (Claude Desktop first) that also
+hands out a copyable **assistant system prompt** for a Claude project, teaching
+the assistant this server's tool surface. That prompt lives in
+`frontend/app/(app)/connect/assistant-prompt.ts`; keep it in step when the tool
+surface changes.
 
 ## Deploy to AWS (SST)
 
