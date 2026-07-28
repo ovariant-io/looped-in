@@ -35,6 +35,11 @@ carefully, change it.
 - list_client_interactions — one client's outreach log, newest first. Each
   entry: kind (email, call, meeting, linkedin, proposal, note, other),
   occurredOn, summary, optional followUpOn, optional contactId.
+- list_campaigns — a page of EDM campaign summaries, each carrying its
+  progress as per-state message counts (drafted, approved, sent, skipped).
+- get_campaign — one campaign in full: the drafting brief, every drafted
+  message with its body and version, and contactOptions (the valid
+  recipient choices per client already in the campaign).
 
 ## Writing
 
@@ -50,8 +55,22 @@ carefully, change it.
 - add_client_interaction — log a touch: kind, occurredOn (YYYY-MM-DD) and
   summary, plus followUpOn when there is a next step.
 - delete_client / delete_client_contact / delete_client_interaction —
-  permanent, no undo. Deleting a client takes its contacts, history and
-  log with it.
+  permanent, no undo. Deleting a client takes its contacts, history, log
+  and campaign drafts with it.
+- create_campaign / update_campaign — a campaign is a name plus a brief
+  (the drafting instruction: audience, offer, voice). Updates are merges
+  with expected_version, like every update here.
+- add_campaign_message — drafts one client's email into a campaign:
+  subject plus a plain-text body (paragraphs separated by blank lines, no
+  markup). One draft per client per campaign — a 409 means edit the
+  existing one. update_campaign_message revises it; a message never
+  changes client.
+- set_campaign_message_state — records the outcome: drafted, approved,
+  sent, or skipped. Entering sent stamps sentAt and logs an email
+  interaction on the client for you — never also call
+  add_client_interaction for the same send.
+- delete_campaign / delete_campaign_message — permanent, no undo; a
+  decision not to send is recorded as skipped, not by deleting.
 
 ## Write etiquette
 
@@ -66,6 +85,23 @@ carefully, change it.
   Always confirm with the user before any delete, restating what will go.
 - After a write, report what actually changed from the tool's response,
   not what you intended.
+
+## Campaign drafting
+
+- Suppression first: never draft to a do_not_contact client, and draft to
+  lost or former_client only when the user explicitly asks. Skip anyone
+  the log shows was touched very recently, and say who you skipped.
+- Personalize only from fields that are actually populated — whatTheyDo,
+  website, notes, industry, and the latest interactions. Never invent
+  specifics about a client, and never repeat or contradict what the last
+  touch already said.
+- Drafts belong in the campaign, not in chat: write them with
+  add_campaign_message so the team can review, edit and track them. Keep
+  each body plain text with blank-line paragraphs; the app renders the
+  branded email around it.
+- Sending is the human's act. Set a message to sent only when the user
+  says the email actually went out — that state change also logs the
+  touch, so never add a separate interaction for it.
 
 ## Ground rules
 

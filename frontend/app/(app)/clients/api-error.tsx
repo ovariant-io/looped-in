@@ -2,7 +2,9 @@ import Link from "next/link";
 import styles from "./clients.module.css";
 
 /**
- * The failure states both `/clients` and `/clients/[id]` can land in, rendered once.
+ * The failure states the database-backed screens can land in, rendered once. Written for
+ * `/clients` and reused by `/campaigns` — the two share the API's database gate, so their 503 /
+ * 401 / 404 shapes are identical and `what` + the back link are the only differences.
  *
  * `callBackend` returns rather than throws, so a dependency that is merely unconfigured shows an
  * explanation instead of tripping the error boundary — and the API's problem+json `detail` is
@@ -13,10 +15,14 @@ export function ApiError({
   status,
   error,
   what = "clients",
+  backHref = "/clients",
+  backLabel = "Back to all clients",
 }: {
   status: number;
   error: string;
   what?: string;
+  backHref?: string;
+  backLabel?: string;
 }) {
   return (
     <section className={`${styles.card} ${styles.error}`}>
@@ -42,7 +48,7 @@ export function ApiError({
       {status === 404 ? (
         <p className={styles.hint}>
           It may have been deleted by someone else — the list is shared by everyone
-          signed in. <Link href="/clients">Back to all clients</Link>.
+          signed in. <Link href={backHref}>{backLabel}</Link>.
         </p>
       ) : null}
     </section>
@@ -51,10 +57,11 @@ export function ApiError({
 
 function title(status: number, what: string): string {
   if (status === 503) {
-    return "🗄️ The client database isn't available";
+    return "🗄️ The database isn't available";
   }
   if (status === 404) {
-    return "🔍 That client no longer exists";
+    // `what` is "this client" / "this campaign" on the pages that can 404 — lists never do.
+    return `🔍 ${what.charAt(0).toUpperCase()}${what.slice(1)} no longer exists`;
   }
   return `❌ Could not load ${what}${status ? ` (${status})` : ""}`;
 }

@@ -1,0 +1,449 @@
+/*
+ * Styled against the design tokens in app/globals.css only — no raw hexes except the one
+ * destructive red and the correctness green, the same exceptions clients.module.css makes.
+ * The shared atoms are cloned from clients.module.css (the house skeleton for list screens);
+ * the campaign-specific pieces are the state chips and the email preview frame.
+ */
+
+.main {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  font-family: var(--font-geist-sans), Helvetica, Arial, sans-serif;
+}
+
+.title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: var(--li-heading-tracking);
+  line-height: var(--li-heading-leading);
+}
+
+.card code,
+.hint code {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.875em;
+  background: var(--li-surface);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.muted {
+  margin: 0;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+  font-size: 0.9rem;
+  word-break: break-word;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+}
+
+.meta {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--li-meta);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  border-radius: var(--li-radius-panel);
+  border: 1px solid var(--li-line);
+  background: var(--li-surface);
+}
+
+.cardTitle {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.notice {
+  border-color: color-mix(in srgb, var(--li-rule) 40%, transparent);
+  background: color-mix(in srgb, var(--li-rule) 7%, transparent);
+}
+
+.manager {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* --- toolbar ------------------------------------------------------------------------------ */
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.searchForm {
+  display: flex;
+  gap: 6px;
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.input {
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 8px 11px;
+  border-radius: var(--li-radius-button);
+  border: 1px solid color-mix(in srgb, var(--foreground) 25%, transparent);
+  background: var(--background);
+  color: inherit;
+  min-width: 0;
+  width: 100%;
+}
+
+.input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--li-rule) 60%, transparent);
+  outline-offset: 1px;
+}
+
+.textarea {
+  composes: input;
+  min-height: 84px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+/* The draft body earns a taller box than the house textarea — it is the artifact. */
+.bodyTextarea {
+  composes: textarea;
+  min-height: 160px;
+}
+
+/* --- buttons ------------------------------------------------------------------------------ */
+
+.button {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.65rem 1.1rem;
+  border-radius: var(--li-radius-button);
+  border: 1px solid var(--li-line);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--li-surface);
+}
+
+.button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.primary {
+  composes: button;
+  border-color: transparent;
+  background: var(--foreground);
+  color: var(--background);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--foreground);
+  opacity: 0.85;
+}
+
+.small {
+  font-size: 0.72rem;
+  padding: 0.45rem 0.75rem;
+}
+
+.danger {
+  color: #dc2626;
+  border-color: color-mix(in srgb, #dc2626 35%, transparent);
+}
+
+.danger:hover:not(:disabled) {
+  background: color-mix(in srgb, #dc2626 10%, transparent);
+}
+
+/* --- table -------------------------------------------------------------------------------- */
+
+.tableWrap {
+  border: 1px solid var(--li-line);
+  border-radius: var(--li-radius-panel);
+  overflow-x: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.table th {
+  text-align: left;
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--li-meta);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--li-line);
+  white-space: nowrap;
+}
+
+.table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--li-line);
+  vertical-align: top;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.nameCell {
+  font-weight: 500;
+  min-width: 180px;
+}
+
+.nameLink {
+  border-bottom: 1px solid color-mix(in srgb, var(--li-rule) 45%, transparent);
+}
+
+.nameLink:hover {
+  border-bottom-color: var(--li-rule);
+}
+
+.count {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--foreground) 60%, transparent);
+}
+
+/*
+ * Message-state chips, same visual system as the client status badges: neutral for the resting
+ * states (drafted, skipped), rule-derived for approved so it re-themes with any picker palette,
+ * and the app's correctness green for sent — an outcome is a signal, not a decoration.
+ */
+.badge {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border-radius: var(--li-radius-button);
+  border: 1px solid var(--li-line);
+  background: var(--li-surface);
+  color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  white-space: nowrap;
+}
+
+.badgeApproved {
+  border-color: color-mix(in srgb, var(--li-rule) 55%, transparent);
+  background: color-mix(in srgb, var(--li-rule) 10%, transparent);
+}
+
+.badgeSent {
+  border-color: color-mix(in srgb, #16a34a 40%, transparent);
+  background: color-mix(in srgb, #16a34a 8%, transparent);
+}
+
+.chips {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.rowActions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+/* --- pager -------------------------------------------------------------------------------- */
+
+.pager {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.range {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--li-meta);
+}
+
+.pagerButtons {
+  display: flex;
+  gap: 6px;
+}
+
+/* --- forms -------------------------------------------------------------------------------- */
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.label {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--li-meta);
+}
+
+.formActions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.fullWidth {
+  width: 100%;
+}
+
+/* --- detail page -------------------------------------------------------------------------- */
+
+.backLink {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--li-meta);
+}
+
+.backLink:hover {
+  color: var(--foreground);
+}
+
+.provenance {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.7rem;
+  letter-spacing: 0.04em;
+  color: var(--li-meta);
+}
+
+.brief {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+}
+
+.messageList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--li-radius-panel);
+  border: 1px solid var(--li-line);
+  background: var(--li-surface);
+}
+
+.messageHead {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.messageSubject {
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.messageText {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: color-mix(in srgb, var(--foreground) 72%, transparent);
+}
+
+/*
+ * The rendered-email preview. The iframe is fully sandboxed (sandbox="") and its document is
+ * produced entirely by app/lib/email-template.ts with every interpolation escaped — first-party
+ * HTML, no scripts, which is what makes this the app's one iframe an acceptable precedent.
+ * The email carries its own (light, baked) background, so no themed background here.
+ */
+.previewFrame {
+  width: 100%;
+  height: 420px;
+  border: 1px solid var(--li-line);
+  border-radius: var(--li-radius-panel);
+  background: transparent;
+}
+
+/* Visible to screen readers only — same technique as clients.module.css. */
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.empty {
+  padding: 28px 20px;
+  text-align: center;
+  border: 1px dashed color-mix(in srgb, var(--foreground) 22%, transparent);
+  border-radius: var(--li-radius-panel);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+}
