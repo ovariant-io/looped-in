@@ -72,9 +72,10 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         but not `website`/`whatTheyDo`; literal `%` and `_` are safe. `industry`
         is an exact match (case-insensitive), `status` one of the lifecycle
         stages. Results are paged newest-first: the response carries `clients`,
-        `total` (matches before paging), `limit` (default 50, max 200) and
-        `offset` — page until `offset + limit >= total`. Summaries omit the
-        prose fields; use `get_client` for the full record.
+        `total` (matches before paging), `limit` (default 50, max 200 — an
+        out-of-range request is clamped, and the response reports the limit
+        actually applied) and `offset` — page until `offset + limit >= total`.
+        Summaries omit the prose fields; use `get_client` for the full record.
         """
         params: dict[str, str | int] = {}
         if search is not None:
@@ -95,8 +96,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         """One client in full, including its contacts.
 
         The only reader that returns the prose fields (`website`, `whatTheyDo`,
-        `notes`) and the lifecycle ones (`status`, `acquiredAt`, `source`,
-        `owner`, `lostReason` — set only when status is `lost`). `owner`,
+        `notes`) and the lifecycle detail (`acquiredAt`, `source`, `owner`,
+        `lostReason` — set only when status is `lost`); `status` itself is
+        already on every `list_clients` summary. `owner`,
         `createdBy` and `updatedBy` are raw Clerk user ids — there is no user
         directory, so compare against `whoami`'s `sub` to recognise the caller.
         `version` is the optimistic-concurrency token; it matters only to future
