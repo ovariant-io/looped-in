@@ -32,6 +32,22 @@ the API surface under `/clients`. The list is shared team data, so these answer
   `delete_client_contact`, and `add_client_interaction` /
   `update_client_interaction` / `delete_client_interaction`.
 
+— plus **EDM campaign tools** (`tools/campaigns.py`), mapping 1:1 onto
+`/campaigns`: a campaign is a drafting brief plus one message per client, and
+nothing here sends email — drafting is the agent's job, sending is the human's,
+the tools record the outcome:
+
+- **Readers:** `list_campaigns` — paged summaries carrying per-state message
+  counts (a campaign has no status of its own); `get_campaign` — the brief,
+  every drafted message with full bodies, and the `contactOptions` a recipient
+  can be chosen from.
+- **Writers:** `create_campaign` / `update_campaign` / `delete_campaign`, and
+  `add_campaign_message` / `update_campaign_message` /
+  `delete_campaign_message` (one draft per client per campaign — a 409 means
+  edit the existing one), plus `set_campaign_message_state` (the only writer of
+  state — entering `sent` stamps `sentAt` and appends an `email` interaction to
+  the client's outreach log, so agents must not also log the touch by hand).
+
 The write policy is deliberate, not inherited from the API. Every update
 requires `expected_version` from a fresh read, so a concurrent edit surfaces as
 a 409 instead of an overwrite. The API's PATCH is a full replacement where null
@@ -240,7 +256,7 @@ API), and **tools** (one module per domain).
 | `looped_in_mcp/backend.py` | `LoopedInApiClient` — the **single seam** to the .NET API (token forwarding, RFC 7807 error mapping). |
 | `looped_in_mcp/deps.py` | `Deps` — shared resources (the API client) handed to each tool module. |
 | `looped_in_mcp/app.py` | `create_app()` — assembles auth + deps + tools + middleware into the ASGI app. |
-| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the annotation vocabularies (`READ_ONLY`, `ADDITIVE`, `OVERWRITE`, `REMOVAL`). `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the client-pipeline CRUD tools. |
+| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the annotation vocabularies (`READ_ONLY`, `ADDITIVE`, `OVERWRITE`, `REMOVAL`). `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the client-pipeline CRUD tools; `campaigns.py` → the EDM campaign-drafting tools. |
 | `requirements.txt` | Local dev ranges: `fastmcp` (3.x), `pydantic`, `httpx`, `python-dotenv`, `mangum` (Lambda), `uvicorn` (local). |
 | `requirements-lambda.lock` | Hash-locked, platform-pinned install used by the deploy. |
 | `Dockerfile` | `python:3.13-slim`, non-root, used by the `mcp` Compose profile. |

@@ -472,7 +472,7 @@ public static class ClientValidation
         return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
 
-    private static bool Fits(string? value, int max, string label, [NotNullWhen(false)] out string? error)
+    public static bool Fits(string? value, int max, string label, [NotNullWhen(false)] out string? error)
     {
         if (value is not null && value.Length > max)
         {

@@ -27,7 +27,6 @@ The write policy, decided on purpose rather than inherited from the API:
 
 from __future__ import annotations
 
-import uuid
 from datetime import date
 from typing import Literal
 
@@ -41,7 +40,9 @@ from looped_in_mcp.tools.common import (
     READ_ONLY,
     REMOVAL,
     caller_token,
+    replacement_body,
     require_api,
+    uuid_arg,
 )
 
 # Mirrors ClientValidation.ClientStatuses in the API (itself mirroring the
@@ -105,59 +106,9 @@ _INTERACTION_FIELDS = [
 ]
 
 
-def _uuid(value: str, noun: str) -> str:
-    """`value` as a canonical UUID string, or a clear ToolError naming `noun`.
-
-    The API's routes constrain `{id:guid}`, so a malformed id never reaches a
-    handler — it comes back as a bare routing 404, indistinguishable from a
-    missing row. Refusing it here keeps the API's 404 meaning exactly one
-    thing, and the canonical form is what goes on the wire.
-    """
-    try:
-        return str(uuid.UUID(value))
-    except ValueError:
-        raise ToolError(f'"{value}" is not a valid {noun} — expected a UUID.') from None
-
-
 def _client_path(client_id: str, suffix: str = "") -> str:
     """`/clients/{id}{suffix}` with the id validated as a UUID first."""
-    return f"/clients/{_uuid(client_id, 'client id')}{suffix}"
-
-
-def _wire_value(value: object) -> object:
-    """A tool-parameter value as the API expects it on the wire (dates → ISO)."""
-    return value.isoformat() if isinstance(value, date) else value
-
-
-def _replacement_body(
-    fields: list[tuple[str, str]],
-    provided: dict[str, object],
-    current: dict,
-    clear: list[str] | None,
-) -> dict:
-    """The full-replacement PATCH body for one merge-style update.
-
-    Provided values win, fields named in `clear` go null, and everything else
-    re-sends what is stored now — which is what turns the API's replace-all
-    PATCH into the merge the tool promises. Preserved values come from the row
-    as the API just returned it, so they are already wire-shaped; only caller
-    input needs converting.
-    """
-    cleared = set(clear or [])
-    body: dict[str, object] = {}
-    for param, wire in fields:
-        value = provided[param]
-        if param in cleared:
-            if value is not None:
-                raise ToolError(
-                    f'"{param}" is both given a value and named in clear — pick one.'
-                )
-            body[wire] = None
-        elif value is not None:
-            body[wire] = _wire_value(value)
-        else:
-            body[wire] = current.get(wire)
-    return body
+    return f"/clients/{uuid_arg(client_id, 'client id')}{suffix}"
 
 
 def register(mcp: FastMCP, deps: Deps) -> None:
@@ -315,7 +266,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "source": source,
             "owner": owner,
         }
-        body = _replacement_body(_CLIENT_FIELDS, provided, current, clear)
+        body = replacement_body(_CLIENT_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
         return await api.patch_json(path, token=token, json=body)
 
@@ -350,14 +301,15 @@ def register(mcp: FastMCP, deps: Deps) -> None:
     async def delete_client(client_id: str) -> dict:
         """Permanently delete a client and everything attached to it. No undo.
 
-        The cascade takes the client's contacts, its status history, and its
-        whole interaction log. A client the team is merely done pursuing should
+        The cascade takes the client's contacts, its status history, its whole
+        interaction log, and any campaign messages drafted for it (see the
+        campaign tools). A client the team is merely done pursuing should
         be *moved* (`lost` or `do_not_contact`) so the record survives — delete
         only rows that are themselves mistakes (duplicates, test entries).
         Confirm with the user before deleting anything real.
         """
         api = require_api(deps)
-        canonical = _uuid(client_id, "client id")
+        canonical = uuid_arg(client_id, "client id")
         await api.delete(_client_path(canonical), token=caller_token())
         return {"deleted": canonical}
 
@@ -407,7 +359,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         """
         api = require_api(deps)
         token = caller_token()
-        canonical = _uuid(contact_id, "contact id")
+        canonical = uuid_arg(contact_id, "contact id")
         detail = await api.get_json(_client_path(client_id), token=token)
         current = next(
             (c for c in detail.get("contacts", []) if str(c.get("id")).lower() == canonical),
@@ -421,7 +373,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "role_title": role_title,
             "notes": notes,
         }
-        body = _replacement_body(_CONTACT_FIELDS, provided, current, clear)
+        body = replacement_body(_CONTACT_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
         return await api.patch_json(
             _client_path(client_id, f"/contacts/{canonical}"), token=token, json=body
@@ -437,7 +389,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         real.
         """
         api = require_api(deps)
-        canonical = _uuid(contact_id, "contact id")
+        canonical = uuid_arg(contact_id, "contact id")
         await api.delete(_client_path(client_id, f"/contacts/{canonical}"), token=caller_token())
         return {"deleted": canonical}
 
@@ -466,7 +418,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "occurredOn": occurred_on.isoformat(),
             "summary": summary,
             "followUpOn": follow_up_on.isoformat() if follow_up_on else None,
-            "contactId": _uuid(contact_id, "contact id") if contact_id is not None else None,
+            "contactId": uuid_arg(contact_id, "contact id") if contact_id is not None else None,
         }
         return await api.post_json(
             _client_path(client_id, "/interactions"), token=caller_token(), json=body
@@ -495,7 +447,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         """
         api = require_api(deps)
         token = caller_token()
-        canonical = _uuid(interaction_id, "interaction id")
+        canonical = uuid_arg(interaction_id, "interaction id")
         interactions = await api.get_json(_client_path(client_id, "/interactions"), token=token)
         current = next(
             (i for i in interactions if str(i.get("id")).lower() == canonical),
@@ -508,9 +460,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "occurred_on": occurred_on,
             "summary": summary,
             "follow_up_on": follow_up_on,
-            "contact_id": _uuid(contact_id, "contact id") if contact_id is not None else None,
+            "contact_id": uuid_arg(contact_id, "contact id") if contact_id is not None else None,
         }
-        body = _replacement_body(_INTERACTION_FIELDS, provided, current, clear)
+        body = replacement_body(_INTERACTION_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
         return await api.patch_json(
             _client_path(client_id, f"/interactions/{canonical}"), token=token, json=body
@@ -525,6 +477,6 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         Confirm with the user before deleting anything real.
         """
         api = require_api(deps)
-        canonical = _uuid(interaction_id, "interaction id")
+        canonical = uuid_arg(interaction_id, "interaction id")
         await api.delete(_client_path(client_id, f"/interactions/{canonical}"), token=caller_token())
         return {"deleted": canonical}

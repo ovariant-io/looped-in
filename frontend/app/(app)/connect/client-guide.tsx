@@ -64,6 +64,21 @@ const TOOLS = [
     ask: "Add Jo Chen, jo@acme.example, as Acme's procurement lead.",
   },
   {
+    name: "list_campaigns / get_campaign",
+    what: "The EDM campaigns and their per-client drafts, with per-state counts as each campaign's progress.",
+    ask: "How is the July re-engagement campaign going?",
+  },
+  {
+    name: "add_campaign_message / update_campaign_message",
+    what: "Drafts one personalized email per client into a campaign — one draft per client, revised in place.",
+    ask: "Draft a re-engagement email for every client in discussion.",
+  },
+  {
+    name: "set_campaign_message_state",
+    what: "Records a draft's outcome — approved, skipped, or sent, which also logs the touch on the client.",
+    ask: "Mark Acme's campaign email as sent.",
+  },
+  {
     name: "whoami",
     what: "Echoes the identity on your session token — user id, email, and the Clerk instance that issued it.",
     ask: "Who am I on Looped In?",
