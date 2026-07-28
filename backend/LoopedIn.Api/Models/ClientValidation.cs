@@ -3,10 +3,18 @@ using System.Diagnostics.CodeAnalysis;
 namespace LoopedIn.Api.Models;
 
 /// <summary>The normalized, storable form of a client's mutable fields.</summary>
-public sealed record ClientFields(string Name, string? Industry, string? Location, string? Notes);
+public sealed record ClientFields(
+    string Name, string? Industry, string? Location, string? Notes, string? Source, string? Owner);
 
 /// <summary>The normalized, storable form of a contact's mutable fields.</summary>
 public sealed record ContactFields(string? FullName, string? Email, string? RoleTitle, string? Notes);
+
+/// <summary>The normalized, storable form of a status transition.</summary>
+public sealed record StatusChange(string Status, string? LostReason);
+
+/// <summary>The normalized, storable form of an interaction's mutable fields.</summary>
+public sealed record InteractionFields(
+    string Kind, DateOnly OccurredOn, string Summary, DateOnly? FollowUpOn, Guid? ContactId);
 
 /// <summary>
 /// Normalization and validation for the <c>/clients</c> request bodies.
@@ -14,9 +22,10 @@ public sealed record ContactFields(string? FullName, string? Email, string? Role
 /// <remarks>
 /// <para>
 /// The limits here <b>mirror the CHECK constraints</b> in
-/// <c>Migrations/0001_clients_contacts.sql</c>. That duplication is the point: without it a
-/// too-long name reaches Postgres, violates a check, and surfaces as a 503 (or worse, a 500)
-/// instead of the 400 it is. If a constraint changes, change both.
+/// <c>Migrations/0001_clients_contacts.sql</c> and <c>0002_acquisition_lifecycle.sql</c>. That
+/// duplication is the point: without it a too-long name reaches Postgres, violates a check, and
+/// surfaces as a 503 (or worse, a 500) instead of the 400 it is. If a constraint changes,
+/// change both.
 /// </para>
 /// <para>
 /// Pure argument-in/result-out, with no <c>HttpContext</c> and no database in sight, so it is
@@ -32,6 +41,23 @@ public static class ClientValidation
     public const int MaxFullNameLength = 200;
     public const int MaxEmailLength = 320;
     public const int MaxRoleTitleLength = 200;
+    public const int MaxSourceLength = 100;
+    public const int MaxOwnerLength = 200;
+    public const int MaxLostReasonLength = 500;
+    public const int MaxInteractionSummaryLength = 2000;
+
+    /// <summary>Mirrors the <c>clients_status_allowed</c> CHECK — change both together.</summary>
+    public static readonly IReadOnlyList<string> ClientStatuses =
+    [
+        "lead", "contacted", "in_discussion", "proposal_sent",
+        "active_client", "former_client", "lost", "do_not_contact",
+    ];
+
+    /// <summary>Mirrors the <c>interactions.kind</c> CHECK — change both together.</summary>
+    public static readonly IReadOnlyList<string> InteractionKinds =
+    [
+        "email", "call", "meeting", "linkedin", "proposal", "note", "other",
+    ];
 
     /// <summary>Largest page the list endpoint will return, whatever <c>?limit=</c> asks for.</summary>
     public const int MaxPageSize = 200;
@@ -43,19 +69,25 @@ public static class ClientValidation
         CreateClientRequest? request,
         [NotNullWhen(true)] out ClientFields? fields,
         [NotNullWhen(false)] out string? error) =>
-        TryReadClient(request?.Name, request?.Industry, request?.Location, request?.Notes, out fields, out error);
+        TryReadClient(
+            request?.Name, request?.Industry, request?.Location, request?.Notes,
+            request?.Source, request?.Owner, out fields, out error);
 
     public static bool TryReadClient(
         UpdateClientRequest? request,
         [NotNullWhen(true)] out ClientFields? fields,
         [NotNullWhen(false)] out string? error) =>
-        TryReadClient(request?.Name, request?.Industry, request?.Location, request?.Notes, out fields, out error);
+        TryReadClient(
+            request?.Name, request?.Industry, request?.Location, request?.Notes,
+            request?.Source, request?.Owner, out fields, out error);
 
     private static bool TryReadClient(
         string? name,
         string? industry,
         string? location,
         string? notes,
+        string? source,
+        string? owner,
         [NotNullWhen(true)] out ClientFields? fields,
         [NotNullWhen(false)] out string? error)
     {
@@ -68,15 +100,110 @@ public static class ClientValidation
             return false;
         }
 
+        // Owner is an opaque Clerk subject — length is the only thing worth checking.
         if (!Fits(trimmedName, MaxNameLength, "name", out error)
             || !Fits(Clean(industry), MaxIndustryLength, "industry", out error)
             || !Fits(Clean(location), MaxLocationLength, "location", out error)
-            || !Fits(Clean(notes), MaxNotesLength, "notes", out error))
+            || !Fits(Clean(notes), MaxNotesLength, "notes", out error)
+            || !Fits(Clean(source), MaxSourceLength, "source", out error)
+            || !Fits(Clean(owner), MaxOwnerLength, "owner", out error))
         {
             return false;
         }
 
-        fields = new ClientFields(trimmedName, Clean(industry), Clean(location), Clean(notes));
+        fields = new ClientFields(
+            trimmedName, Clean(industry), Clean(location), Clean(notes), Clean(source), Clean(owner));
+        error = null;
+        return true;
+    }
+
+    public static bool TryReadStatusChange(
+        ChangeClientStatusRequest? request,
+        [NotNullWhen(true)] out StatusChange? change,
+        [NotNullWhen(false)] out string? error)
+    {
+        change = null;
+
+        var status = Clean(request?.Status);
+        if (status is null || !ClientStatuses.Contains(status))
+        {
+            error = $"\"{status ?? "(empty)"}\" isn't a status. Use one of: {string.Join(", ", ClientStatuses)}.";
+            return false;
+        }
+
+        var lostReason = Clean(request?.LostReason);
+        if (!Fits(lostReason, MaxLostReasonLength, "lost reason", out error))
+        {
+            return false;
+        }
+
+        // Mirrors the clients_lost_reason_shape CHECK, so a stray reason is a 400 and never a
+        // constraint violation. Transitioning to lost WITHOUT a reason is fine.
+        if (lostReason is not null && status != "lost")
+        {
+            error = "A lost reason only accompanies a change to lost.";
+            return false;
+        }
+
+        change = new StatusChange(status, lostReason);
+        error = null;
+        return true;
+    }
+
+    public static bool TryReadInteraction(
+        CreateInteractionRequest? request,
+        [NotNullWhen(true)] out InteractionFields? fields,
+        [NotNullWhen(false)] out string? error) =>
+        TryReadInteraction(
+            request?.Kind, request?.OccurredOn, request?.Summary, request?.FollowUpOn,
+            request?.ContactId, out fields, out error);
+
+    public static bool TryReadInteraction(
+        UpdateInteractionRequest? request,
+        [NotNullWhen(true)] out InteractionFields? fields,
+        [NotNullWhen(false)] out string? error) =>
+        TryReadInteraction(
+            request?.Kind, request?.OccurredOn, request?.Summary, request?.FollowUpOn,
+            request?.ContactId, out fields, out error);
+
+    private static bool TryReadInteraction(
+        string? kind,
+        DateOnly? occurredOn,
+        string? summary,
+        DateOnly? followUpOn,
+        Guid? contactId,
+        [NotNullWhen(true)] out InteractionFields? fields,
+        [NotNullWhen(false)] out string? error)
+    {
+        fields = null;
+
+        var cleanKind = Clean(kind);
+        if (cleanKind is null || !InteractionKinds.Contains(cleanKind))
+        {
+            error = $"\"{cleanKind ?? "(empty)"}\" isn't an interaction kind. "
+                + $"Use one of: {string.Join(", ", InteractionKinds)}.";
+            return false;
+        }
+
+        if (occurredOn is not { } occurred)
+        {
+            error = "An interaction needs the date it occurred.";
+            return false;
+        }
+
+        var cleanSummary = Clean(summary);
+        if (cleanSummary is null)
+        {
+            error = "An interaction needs a summary.";
+            return false;
+        }
+
+        if (!Fits(cleanSummary, MaxInteractionSummaryLength, "summary", out error))
+        {
+            return false;
+        }
+
+        fields = new InteractionFields(cleanKind, occurred, cleanSummary, followUpOn, contactId);
         error = null;
         return true;
     }
@@ -147,6 +274,24 @@ public static class ClientValidation
 
     /// <summary>A negative offset is a client bug, not a request to page backwards from the end.</summary>
     public static int PageOffset(int? offset) => offset is > 0 ? offset.Value : 0;
+
+    /// <summary>
+    /// A recognised status for <c>?status=</c>, or null meaning "no filter".
+    /// </summary>
+    /// <remarks>
+    /// An unrecognised value is <b>ignored rather than matched literally</b>. Passing it through
+    /// would compare <c>status = 'bogus'</c>, which matches nothing and renders as an empty list —
+    /// indistinguishable, to whoever is looking, from a database with no clients in it. The
+    /// clients page already degrades a hand-typed value this way before it builds the query; doing
+    /// it here as well means a direct caller (curl, an MCP tool) gets the same answer as the
+    /// screen. <c>?industry=</c> gets no equivalent because it is free text with no closed set to
+    /// check against.
+    /// </remarks>
+    public static string? StatusFilter(string? status)
+    {
+        var value = Clean(status);
+        return value is not null && ClientStatuses.Contains(value) ? value : null;
+    }
 
     /// <summary>
     /// Turns a search term into an <c>ILIKE</c> pattern with the wildcards escaped, so searching

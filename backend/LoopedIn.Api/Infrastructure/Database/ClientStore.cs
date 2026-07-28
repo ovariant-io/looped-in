@@ -18,6 +18,12 @@ public enum MutationStatus
 
     /// <summary>The write would collide with a row that already exists.</summary>
     Duplicate,
+
+    /// <summary>
+    /// The write names a related row that doesn't exist where it claims to — a contact id from
+    /// another client, say. A caller mistake (400), not a conflict and not a missing target.
+    /// </summary>
+    InvalidReference,
 }
 
 /// <summary>
@@ -34,6 +40,9 @@ public sealed record MutationResult<T>(MutationStatus Status, T? Value, string? 
     public static MutationResult<T> VersionConflict() => new(MutationStatus.VersionConflict, null, null);
 
     public static MutationResult<T> Duplicate(string message) => new(MutationStatus.Duplicate, null, message);
+
+    public static MutationResult<T> InvalidReference(string message) =>
+        new(MutationStatus.InvalidReference, null, message);
 }
 
 /// <summary>
@@ -67,12 +76,22 @@ public sealed class ClientStore
                      where ct.client_id = c.id
                        and (ct.full_name ilike @pattern escape '\' or ct.email ilike @pattern escape '\'))))
         and (@industry::text is null or lower(c.industry) = lower(@industry))
+        and (@status::text is null or c.status = @status)
         """;
 
+    // Each of these column lists is coupled by position to its reader (ReadClient, ReadContact,
+    // ReadInteraction, ReadHistoryEntry) — add a column and you renumber the ordinals in the
+    // same change, or the mismatch surfaces as an InvalidCastException at runtime.
     private const string ClientColumns =
-        "id, name, industry, location, notes, version, created_at, created_by, updated_at, updated_by";
+        "id, name, industry, location, notes, status, acquired_at, source, owner, lost_reason, "
+        + "version, created_at, created_by, updated_at, updated_by";
 
     private const string ContactColumns = "id, full_name, email, role_title, notes, version, updated_at";
+
+    private const string InteractionColumns =
+        "id, contact_id, kind, occurred_on, summary, follow_up_on, version, created_at, created_by, updated_at";
+
+    private const string HistoryColumns = "id, from_status, to_status, changed_at, changed_by";
 
     private readonly NpgsqlDataSource _dataSource;
 
@@ -93,6 +112,7 @@ public sealed class ClientStore
     public async Task<ClientListResponse> ListAsync(
         string? searchPattern,
         string? industry,
+        string? status,
         int limit,
         int offset,
         CancellationToken cancellationToken)
@@ -101,7 +121,7 @@ public sealed class ClientStore
         var total = 0;
 
         await using (var command = _dataSource.CreateCommand($"""
-            select c.id, c.name, c.industry, c.location, c.version, c.updated_at,
+            select c.id, c.name, c.industry, c.location, c.status, c.version, c.updated_at,
                    (select count(*) from contacts ct where ct.client_id = c.id) as contact_count,
                    count(*) over () as total_count
             from clients c
@@ -112,6 +132,7 @@ public sealed class ClientStore
         {
             command.Parameters.Add(Text("pattern", searchPattern));
             command.Parameters.Add(Text("industry", industry));
+            command.Parameters.Add(Text("status", status));
             command.Parameters.Add(Int("limit", limit));
             command.Parameters.Add(Int("offset", offset));
 
@@ -123,11 +144,12 @@ public sealed class ClientStore
                     Name: reader.GetString(1),
                     Industry: NullableString(reader, 2),
                     Location: NullableString(reader, 3),
-                    ContactCount: (int)reader.GetInt64(6),
-                    Version: reader.GetInt64(4),
-                    UpdatedAt: reader.GetFieldValue<DateTimeOffset>(5)));
+                    Status: reader.GetString(4),
+                    ContactCount: (int)reader.GetInt64(7),
+                    Version: reader.GetInt64(5),
+                    UpdatedAt: reader.GetFieldValue<DateTimeOffset>(6)));
 
-                total = (int)reader.GetInt64(7);
+                total = (int)reader.GetInt64(8);
             }
         }
 
@@ -136,19 +158,24 @@ public sealed class ClientStore
         // Only that case pays for a second query.
         if (clients.Count == 0 && offset > 0)
         {
-            total = await CountAsync(searchPattern, industry, cancellationToken);
+            total = await CountAsync(searchPattern, industry, status, cancellationToken);
         }
 
         return new ClientListResponse(clients, total, limit, offset);
     }
 
-    private async Task<int> CountAsync(string? searchPattern, string? industry, CancellationToken cancellationToken)
+    private async Task<int> CountAsync(
+        string? searchPattern,
+        string? industry,
+        string? status,
+        CancellationToken cancellationToken)
     {
         await using var command = _dataSource.CreateCommand($"""
             select count(*) from clients c where {ListFilter}
             """);
         command.Parameters.Add(Text("pattern", searchPattern));
         command.Parameters.Add(Text("industry", industry));
+        command.Parameters.Add(Text("status", status));
 
         return (int)(long)(await command.ExecuteScalarAsync(cancellationToken) ?? 0L);
     }
@@ -192,10 +219,12 @@ public sealed class ClientStore
     {
         var id = Guid.CreateVersion7();
 
+        // status / acquired_at / lost_reason are absent on purpose: a new client starts at the
+        // 'lead' default and only the status-transition statement ever moves it.
         await using var command = _dataSource.CreateCommand($"""
             select count(*) from clients where lower(name) = lower(@name);
-            insert into clients (id, name, industry, location, notes, created_by, updated_by)
-            values (@id, @name, @industry, @location, @notes, @actor, @actor)
+            insert into clients (id, name, industry, location, notes, source, owner, created_by, updated_by)
+            values (@id, @name, @industry, @location, @notes, @source, @owner, @actor, @actor)
             returning {ClientColumns};
             """);
         command.Parameters.Add(Uuid("id", id));
@@ -203,6 +232,8 @@ public sealed class ClientStore
         command.Parameters.Add(Text("industry", fields.Industry));
         command.Parameters.Add(Text("location", fields.Location));
         command.Parameters.Add(Text("notes", fields.Notes));
+        command.Parameters.Add(Text("source", fields.Source));
+        command.Parameters.Add(Text("owner", fields.Owner));
         command.Parameters.Add(Text("actor", actor));
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -234,9 +265,13 @@ public sealed class ClientStore
         ClientDetail client;
         IReadOnlyList<ContactSummary> contacts;
 
+        // Deliberately no status / acquired_at / lost_reason here: PATCH replacing them would
+        // both bypass the history audit and put the clients_lost_reason_shape CHECK within reach
+        // of a plain field edit. ChangeStatusAsync is the only writer of those columns.
         await using (var command = _dataSource.CreateCommand($"""
             update clients
             set name = @name, industry = @industry, location = @location, notes = @notes,
+                source = @source, owner = @owner,
                 version = version + 1, updated_at = now(), updated_by = @actor
             where id = @id and version = @expected
             returning {ClientColumns};
@@ -248,6 +283,8 @@ public sealed class ClientStore
             command.Parameters.Add(Text("industry", fields.Industry));
             command.Parameters.Add(Text("location", fields.Location));
             command.Parameters.Add(Text("notes", fields.Notes));
+            command.Parameters.Add(Text("source", fields.Source));
+            command.Parameters.Add(Text("owner", fields.Owner));
             command.Parameters.Add(Text("actor", actor));
             command.Parameters.Add(BigInt("expected", expectedVersion));
 
@@ -257,6 +294,11 @@ public sealed class ClientStore
                 // Zero rows means either "no such client" or "someone else got there first".
                 // One extra query tells the two apart, and the caller needs to: a 404 and a 409
                 // ask the user to do completely different things.
+                //
+                // Close first: every command here draws its own connection from the pool, so
+                // running the disambiguation under an open reader would hold two at once — on
+                // exactly the contended path where a 409 storm means concurrency is already high.
+                await reader.CloseAsync();
                 return await ClientExistsAsync(id, cancellationToken)
                     ? MutationResult<ClientDetail>.VersionConflict()
                     : MutationResult<ClientDetail>.NotFound();
@@ -268,6 +310,113 @@ public sealed class ClientStore
         }
 
         return MutationResult<ClientDetail>.Applied(client with { Contacts = contacts });
+    }
+
+    /// <summary>
+    /// Moves a client to a new status, guarded by <paramref name="expectedVersion"/>, recording
+    /// the transition in <c>client_status_history</c> atomically with the update. The only
+    /// writer of <c>status</c>, <c>acquired_at</c> and <c>lost_reason</c>.
+    /// </summary>
+    /// <remarks>
+    /// Same-status transitions are allowed on purpose — a <c>lost → lost</c> change is how a
+    /// lost reason gets corrected, since PATCH cannot touch it — and they land in the history
+    /// like any other transition.
+    /// </remarks>
+    public async Task<MutationResult<ClientDetail>> ChangeStatusAsync(
+        Guid id,
+        StatusChange change,
+        long expectedVersion,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        ClientDetail client;
+        IReadOnlyList<ContactSummary> contacts;
+
+        // One data-modifying CTE chain, atomic under autocommit, leaning on two documented
+        // Postgres behaviours: every CTE reads the same snapshot, so `prev` sees the
+        // pre-update status; and a data-modifying CTE runs exactly once even when nothing
+        // selects from it — `recorded` is NOT dead code. The history insert selects from
+        // `changed`, so a version conflict (empty `changed`) writes no audit row either.
+        await using (var command = _dataSource.CreateCommand($"""
+            with prev as (
+                select status as from_status from clients where id = @id
+            ),
+            changed as (
+                update clients
+                set status      = @status,
+                    acquired_at = case when @status = 'active_client'
+                                       then coalesce(acquired_at, current_date)
+                                       else acquired_at end,
+                    lost_reason = case when @status = 'lost' then @lostReason else null end,
+                    version = version + 1, updated_at = now(), updated_by = @actor
+                where id = @id and version = @expected
+                returning {ClientColumns}
+            ),
+            recorded as (
+                insert into client_status_history (id, client_id, from_status, to_status, changed_by)
+                select @historyId, c.id, p.from_status, c.status, @actor
+                from changed c cross join prev p
+            )
+            select {ClientColumns} from changed;
+            select {ContactColumns} from contacts where client_id = @id order by created_at, id;
+            """))
+        {
+            command.Parameters.Add(Uuid("id", id));
+            command.Parameters.Add(Text("status", change.Status));
+            command.Parameters.Add(Text("lostReason", change.LostReason));
+            command.Parameters.Add(Text("actor", actor));
+            command.Parameters.Add(BigInt("expected", expectedVersion));
+            command.Parameters.Add(Uuid("historyId", Guid.CreateVersion7()));
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                // Closed before the disambiguation for the same reason as UpdateAsync: one
+                // pooled connection at a time.
+                await reader.CloseAsync();
+                return await ClientExistsAsync(id, cancellationToken)
+                    ? MutationResult<ClientDetail>.VersionConflict()
+                    : MutationResult<ClientDetail>.NotFound();
+            }
+
+            client = ReadClient(reader);
+            await reader.NextResultAsync(cancellationToken);
+            contacts = await ReadContactsAsync(reader, cancellationToken);
+        }
+
+        return MutationResult<ClientDetail>.Applied(client with { Contacts = contacts });
+    }
+
+    /// <summary>
+    /// Every status transition of a client, newest first, or null when no such client exists —
+    /// so the endpoint can 404 rather than serve an empty history for a deleted id.
+    /// </summary>
+    public async Task<IReadOnlyList<StatusHistoryEntry>?> ListStatusHistoryAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        await using var command = _dataSource.CreateCommand($"""
+            select 1 from clients where id = @id;
+            select {HistoryColumns} from client_status_history
+            where client_id = @id order by changed_at desc, id desc;
+            """);
+        command.Parameters.Add(Uuid("id", id));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        await reader.NextResultAsync(cancellationToken);
+
+        var entries = new List<StatusHistoryEntry>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            entries.Add(ReadHistoryEntry(reader));
+        }
+
+        return entries;
     }
 
     /// <summary>
@@ -381,6 +530,159 @@ public sealed class ClientStore
     }
 
     /// <summary>
+    /// Every interaction logged against a client, newest first, or null when no such client
+    /// exists — so the endpoint can 404 rather than serve an empty log for a deleted id.
+    /// </summary>
+    /// <remarks>
+    /// <b>Unpaged on purpose, unlike <see cref="ListAsync"/>.</b> Both child collections on a
+    /// client's page — this log and its contacts — are read whole, because the page shows them
+    /// whole and a pager over five rows is worse than no pager. The asymmetry is recorded rather
+    /// than left implicit because an interaction log is the one table here that only ever grows:
+    /// contacts stay in single digits, touches accumulate forever. Paging both is the fix when a
+    /// real client's history stops fitting a screen — the same shape of deferral as pg_trgm for
+    /// search, and for the same reason (the index already covers the read; what gives out first
+    /// is the payload, not the scan). Deliberately not done at ~200 clients with a handful of
+    /// touches each.
+    /// </remarks>
+    public async Task<IReadOnlyList<InteractionSummary>?> ListInteractionsAsync(
+        Guid clientId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = _dataSource.CreateCommand($"""
+            select 1 from clients where id = @clientId;
+            select {InteractionColumns} from interactions
+            where client_id = @clientId order by occurred_on desc, created_at desc, id desc;
+            """);
+        command.Parameters.Add(Uuid("clientId", clientId));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return null;
+        }
+
+        await reader.NextResultAsync(cancellationToken);
+
+        var interactions = new List<InteractionSummary>();
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            interactions.Add(ReadInteraction(reader));
+        }
+
+        return interactions;
+    }
+
+    /// <summary>Logs an interaction against a client.</summary>
+    public async Task<MutationResult<InteractionSummary>> AddInteractionAsync(
+        Guid clientId,
+        InteractionFields fields,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        // Same shape as AddContactAsync, with one more guard: a supplied contact must belong to
+        // THIS client, or the log would quietly link a touch to somebody else's person.
+        await using var command = _dataSource.CreateCommand($"""
+            insert into interactions (id, client_id, contact_id, kind, occurred_on, summary,
+                                      follow_up_on, created_by, updated_by)
+            select @id, @clientId, @contactId, @kind, @occurredOn, @summary, @followUpOn, @actor, @actor
+            where exists (select 1 from clients where id = @clientId)
+              and (@contactId::uuid is null
+                   or exists (select 1 from contacts where id = @contactId and client_id = @clientId))
+            returning {InteractionColumns};
+            """);
+        command.Parameters.Add(Uuid("id", Guid.CreateVersion7()));
+        command.Parameters.Add(Uuid("clientId", clientId));
+        command.Parameters.Add(NullableUuid("contactId", fields.ContactId));
+        command.Parameters.Add(Text("kind", fields.Kind));
+        command.Parameters.Add(Date("occurredOn", fields.OccurredOn));
+        command.Parameters.Add(Text("summary", fields.Summary));
+        command.Parameters.Add(NullableDate("followUpOn", fields.FollowUpOn));
+        command.Parameters.Add(Text("actor", actor));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return MutationResult<InteractionSummary>.Applied(ReadInteraction(reader));
+        }
+
+        // Zero rows: either the client is gone, or it's there and the contact reference is bad.
+        await reader.CloseAsync();
+        return await ClientExistsAsync(clientId, cancellationToken)
+            ? MutationResult<InteractionSummary>.InvalidReference(
+                "That contact doesn't belong to this client (or no longer exists).")
+            : MutationResult<InteractionSummary>.NotFound();
+    }
+
+    /// <summary>
+    /// Replaces an interaction's mutable fields, guarded by <paramref name="expectedVersion"/>.
+    /// Scoped by <paramref name="clientId"/> like the contact routes.
+    /// </summary>
+    public async Task<MutationResult<InteractionSummary>> UpdateInteractionAsync(
+        Guid clientId,
+        Guid interactionId,
+        InteractionFields fields,
+        long expectedVersion,
+        string actor,
+        CancellationToken cancellationToken)
+    {
+        await using var command = _dataSource.CreateCommand($"""
+            update interactions
+            set kind = @kind, occurred_on = @occurredOn, summary = @summary,
+                follow_up_on = @followUpOn, contact_id = @contactId,
+                version = version + 1, updated_at = now(), updated_by = @actor
+            where id = @id and client_id = @clientId and version = @expected
+              and (@contactId::uuid is null
+                   or exists (select 1 from contacts where id = @contactId and client_id = @clientId))
+            returning {InteractionColumns};
+            """);
+        command.Parameters.Add(Uuid("id", interactionId));
+        command.Parameters.Add(Uuid("clientId", clientId));
+        command.Parameters.Add(NullableUuid("contactId", fields.ContactId));
+        command.Parameters.Add(Text("kind", fields.Kind));
+        command.Parameters.Add(Date("occurredOn", fields.OccurredOn));
+        command.Parameters.Add(Text("summary", fields.Summary));
+        command.Parameters.Add(NullableDate("followUpOn", fields.FollowUpOn));
+        command.Parameters.Add(Text("actor", actor));
+        command.Parameters.Add(BigInt("expected", expectedVersion));
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (await reader.ReadAsync(cancellationToken))
+        {
+            return MutationResult<InteractionSummary>.Applied(ReadInteraction(reader));
+        }
+
+        // Three possible reasons for zero rows, told apart in order of honesty: a missing row is
+        // 404 whatever else is true; then a bad contact reference must not masquerade as a
+        // version conflict, or the user reloads forever chasing a 409 that isn't one.
+        await reader.CloseAsync();
+        if (!await InteractionExistsAsync(clientId, interactionId, cancellationToken))
+        {
+            return MutationResult<InteractionSummary>.NotFound();
+        }
+
+        if (fields.ContactId is { } contactId
+            && !await ContactExistsAsync(clientId, contactId, cancellationToken))
+        {
+            return MutationResult<InteractionSummary>.InvalidReference(
+                "That contact doesn't belong to this client (or no longer exists).");
+        }
+
+        return MutationResult<InteractionSummary>.VersionConflict();
+    }
+
+    public async Task<bool> DeleteInteractionAsync(
+        Guid clientId,
+        Guid interactionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = _dataSource.CreateCommand(
+            "delete from interactions where id = @id and client_id = @clientId");
+        command.Parameters.Add(Uuid("id", interactionId));
+        command.Parameters.Add(Uuid("clientId", clientId));
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
+    }
+
+    /// <summary>
     /// Looks for an existing contact of this client with the same email, so the answer can name
     /// it. Returns null when there is no clash.
     /// </summary>
@@ -440,18 +742,35 @@ public sealed class ClientStore
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
+    private async Task<bool> InteractionExistsAsync(
+        Guid clientId,
+        Guid interactionId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = _dataSource.CreateCommand(
+            "select 1 from interactions where id = @id and client_id = @clientId");
+        command.Parameters.Add(Uuid("id", interactionId));
+        command.Parameters.Add(Uuid("clientId", clientId));
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
     private static ClientDetail ReadClient(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
         Name: reader.GetString(1),
         Industry: NullableString(reader, 2),
         Location: NullableString(reader, 3),
         Notes: NullableString(reader, 4),
+        Status: reader.GetString(5),
+        AcquiredAt: NullableDate(reader, 6),
+        Source: NullableString(reader, 7),
+        Owner: NullableString(reader, 8),
+        LostReason: NullableString(reader, 9),
         Contacts: [],
-        Version: reader.GetInt64(5),
-        CreatedAt: reader.GetFieldValue<DateTimeOffset>(6),
-        CreatedBy: reader.GetString(7),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(8),
-        UpdatedBy: reader.GetString(9));
+        Version: reader.GetInt64(10),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(11),
+        CreatedBy: reader.GetString(12),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(13),
+        UpdatedBy: reader.GetString(14));
 
     private static ContactSummary ReadContact(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),
@@ -461,6 +780,25 @@ public sealed class ClientStore
         Notes: NullableString(reader, 4),
         Version: reader.GetInt64(5),
         UpdatedAt: reader.GetFieldValue<DateTimeOffset>(6));
+
+    private static InteractionSummary ReadInteraction(NpgsqlDataReader reader) => new(
+        Id: reader.GetGuid(0),
+        ContactId: reader.IsDBNull(1) ? null : reader.GetGuid(1),
+        Kind: reader.GetString(2),
+        OccurredOn: reader.GetFieldValue<DateOnly>(3),
+        Summary: reader.GetString(4),
+        FollowUpOn: NullableDate(reader, 5),
+        Version: reader.GetInt64(6),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(7),
+        CreatedBy: reader.GetString(8),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(9));
+
+    private static StatusHistoryEntry ReadHistoryEntry(NpgsqlDataReader reader) => new(
+        Id: reader.GetGuid(0),
+        FromStatus: reader.GetString(1),
+        ToStatus: reader.GetString(2),
+        ChangedAt: reader.GetFieldValue<DateTimeOffset>(3),
+        ChangedBy: reader.GetString(4));
 
     private static async Task<IReadOnlyList<ContactSummary>> ReadContactsAsync(
         NpgsqlDataReader reader,
@@ -478,10 +816,19 @@ public sealed class ClientStore
     private static string? NullableString(NpgsqlDataReader reader, int ordinal) =>
         reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
 
+    private static DateOnly? NullableDate(NpgsqlDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateOnly>(ordinal);
+
     // Parameters carry an explicit type rather than relying on inference, because a null value
     // gives Npgsql nothing to infer from.
     private static NpgsqlParameter Text(string name, string? value) =>
         new(name, NpgsqlDbType.Text) { Value = (object?)value ?? DBNull.Value };
+
+    private static NpgsqlParameter Date(string name, DateOnly value) =>
+        new(name, NpgsqlDbType.Date) { Value = value };
+
+    private static NpgsqlParameter NullableDate(string name, DateOnly? value) =>
+        new(name, NpgsqlDbType.Date) { Value = (object?)value ?? DBNull.Value };
 
     private static NpgsqlParameter Uuid(string name, Guid value) =>
         new(name, NpgsqlDbType.Uuid) { Value = value };

@@ -47,6 +47,11 @@ SOURCE_NAME = "Datbase List – 27 July 2026.xlsx"
 
 #: Written to created_by/updated_by on every seeded row, so imported data stays distinguishable
 #: from user-entered data forever — and so the whole import can be guarded by one EXISTS check.
+#:
+#: The lifecycle columns added by migration 0002 (status/acquired_at/source/owner/lost_reason)
+#: are deliberately absent from the INSERTs below: the spreadsheet carries no pipeline signal,
+#: so every seeded client starts at the database's own 'lead' default. No importer change is
+#: needed when those columns evolve, as long as they keep defaults.
 SENTINEL = "import:datbase-list-2026-07-27"
 
 #: A fixed namespace, so contact and client ids are a pure function of the source data.

@@ -14,12 +14,64 @@
  * - **Dates stay strings end to end.** They are rendered, not computed with.
  */
 
+/**
+ * The pipeline statuses, in funnel order. Mirrors `clients_status_allowed` in migration 0002 and
+ * `ClientValidation.ClientStatuses` — change all three together.
+ */
+export const CLIENT_STATUSES = [
+  "lead",
+  "contacted",
+  "in_discussion",
+  "proposal_sent",
+  "active_client",
+  "former_client",
+  "lost",
+  "do_not_contact",
+] as const;
+
+export type ClientStatus = (typeof CLIENT_STATUSES)[number];
+
+export const STATUS_LABELS: Record<ClientStatus, string> = {
+  lead: "Lead",
+  contacted: "Contacted",
+  in_discussion: "In discussion",
+  proposal_sent: "Proposal sent",
+  active_client: "Active client",
+  former_client: "Former client",
+  lost: "Lost",
+  do_not_contact: "Do not contact",
+};
+
+/** Mirrors the `interactions.kind` CHECK and `ClientValidation.InteractionKinds`. */
+export const INTERACTION_KINDS = [
+  "email",
+  "call",
+  "meeting",
+  "linkedin",
+  "proposal",
+  "note",
+  "other",
+] as const;
+
+export type InteractionKind = (typeof INTERACTION_KINDS)[number];
+
+export const KIND_LABELS: Record<InteractionKind, string> = {
+  email: "Email",
+  call: "Call",
+  meeting: "Meeting",
+  linkedin: "LinkedIn",
+  proposal: "Proposal",
+  note: "Note",
+  other: "Other",
+};
+
 /** A row in the client list. Deliberately without `notes` — see {@link ClientDetail}. */
 export type ClientSummary = {
   id: string;
   name: string;
   industry: string | null;
   location: string | null;
+  status: ClientStatus;
   contactCount: number;
   version: number;
   /** ISO 8601. Display only. */
@@ -49,12 +101,46 @@ export type ClientDetail = {
   industry: string | null;
   location: string | null;
   notes: string | null;
+  status: ClientStatus;
+  /** yyyy-MM-dd, set by the API on the first transition to active_client. Display only. */
+  acquiredAt: string | null;
+  source: string | null;
+  /** A Clerk user id. Rendered as "you" when it matches the signed-in user. */
+  owner: string | null;
+  /** Only ever non-null while `status` is "lost". */
+  lostReason: string | null;
   contacts: ContactSummary[];
   version: number;
   createdAt: string;
   createdBy: string;
   updatedAt: string;
   updatedBy: string;
+};
+
+/** One recorded status transition. Immutable — no version, nothing to edit. */
+export type StatusHistoryEntry = {
+  id: string;
+  fromStatus: ClientStatus;
+  toStatus: ClientStatus;
+  /** ISO 8601. Display only. */
+  changedAt: string;
+  changedBy: string;
+};
+
+/** One logged interaction. `createdBy` is who logged it — half the point of a log. */
+export type InteractionSummary = {
+  id: string;
+  contactId: string | null;
+  kind: InteractionKind;
+  /** yyyy-MM-dd. Display only. */
+  occurredOn: string;
+  summary: string;
+  /** yyyy-MM-dd or null. Display only. */
+  followUpOn: string | null;
+  version: number;
+  createdAt: string;
+  createdBy: string;
+  updatedAt: string;
 };
 
 export type ClientListResponse = {
@@ -74,12 +160,29 @@ export type CreateClientResponse = {
   warning: string | null;
 };
 
-/** The mutable fields of a client. All four are always sent — PATCH replaces, it does not merge. */
+/**
+ * The mutable fields of a client. All six are always sent — PATCH replaces, it does not merge.
+ * Status, acquiredAt and lostReason are deliberately absent: they move only through the
+ * status-transition action, never through PATCH.
+ */
 export type ClientFields = {
   name: string;
   industry: string | null;
   location: string | null;
   notes: string | null;
+  source: string | null;
+  owner: string | null;
+};
+
+/** The mutable fields of an interaction. All five are always sent — PATCH replaces. */
+export type InteractionFields = {
+  kind: InteractionKind;
+  /** yyyy-MM-dd — exactly what `<input type="date">` produces. */
+  occurredOn: string;
+  summary: string;
+  /** yyyy-MM-dd or null. */
+  followUpOn: string | null;
+  contactId: string | null;
 };
 
 /** The mutable fields of a contact. One of `fullName` / `email` must be present. */

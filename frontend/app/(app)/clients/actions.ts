@@ -5,9 +5,12 @@ import { callBackend, type ApiResult } from "@/app/lib/backend";
 import type {
   ClientDetail,
   ClientFields,
+  ClientStatus,
   ContactFields,
   ContactSummary,
   CreateClientResponse,
+  InteractionFields,
+  InteractionSummary,
 } from "./types";
 
 /**
@@ -67,19 +70,20 @@ export async function updateClient(
 }
 
 /**
- * Edits a client from a list row, where `notes` is not on screen.
+ * Edits a client from a list row, where `notes`, `source` and `owner` are not on screen.
  *
- * PATCH replaces every mutable field, so sending `notes: null` from a list row would silently
- * wipe it. This reads the current notes first and passes them through unchanged.
+ * PATCH replaces every mutable field, so sending nulls for them from a list row would silently
+ * wipe all three. This reads the current values first and passes them through unchanged — the
+ * `Omit<>` on the parameter is what makes forgetting one a compile error rather than a wipe.
  *
  * The read cannot open a lost-update window, because `expectedVersion` still comes from the
  * **caller** — the version the row was rendered with. If anyone changed the client between the
- * user loading the list and this call (including changing the notes we just read), the version
+ * user loading the list and this call (including changing the fields we just read), the version
  * no longer matches and the PATCH answers 409.
  */
 export async function updateClientFromRow(
   id: string,
-  fields: Omit<ClientFields, "notes">,
+  fields: Omit<ClientFields, "notes" | "source" | "owner">,
   expectedVersion: number,
 ): Promise<ApiResult<ClientDetail>> {
   const current = await callBackend<ClientDetail>(
@@ -90,7 +94,40 @@ export async function updateClientFromRow(
     return current;
   }
 
-  return updateClient(id, { ...fields, notes: current.data.notes }, expectedVersion);
+  return updateClient(
+    id,
+    {
+      ...fields,
+      notes: current.data.notes,
+      source: current.data.source,
+      owner: current.data.owner,
+    },
+    expectedVersion,
+  );
+}
+
+/**
+ * Moves a client to a new status via the dedicated transition endpoint — the only carrier of
+ * status, so PATCH can never wipe it. The API records the transition in the status history,
+ * stamps `acquiredAt` on the first move to active_client, and clears `lostReason` on any move
+ * away from lost. `lostReason` may only accompany a change **to** lost.
+ */
+export async function changeClientStatus(
+  id: string,
+  status: ClientStatus,
+  lostReason: string | null,
+  expectedVersion: number,
+): Promise<ApiResult<ClientDetail>> {
+  const result = await callBackend<ClientDetail>(
+    `/clients/${encodeURIComponent(id)}/status`,
+    { method: "POST", body: { status, lostReason, expectedVersion } },
+  );
+
+  if (result.ok) {
+    refresh();
+  }
+
+  return result;
 }
 
 export async function deleteClient(id: string): Promise<ApiResult<void>> {
@@ -145,6 +182,56 @@ export async function deleteContact(
 ): Promise<ApiResult<void>> {
   const result = await callBackend<void>(
     `/clients/${encodeURIComponent(clientId)}/contacts/${encodeURIComponent(contactId)}`,
+    { method: "DELETE" },
+  );
+
+  if (result.ok) {
+    refresh();
+  }
+
+  return result;
+}
+
+export async function addInteraction(
+  clientId: string,
+  fields: InteractionFields,
+): Promise<ApiResult<InteractionSummary>> {
+  const result = await callBackend<InteractionSummary>(
+    `/clients/${encodeURIComponent(clientId)}/interactions`,
+    { method: "POST", body: fields },
+  );
+
+  if (result.ok) {
+    refresh();
+  }
+
+  return result;
+}
+
+export async function updateInteraction(
+  clientId: string,
+  interactionId: string,
+  fields: InteractionFields,
+  expectedVersion: number,
+): Promise<ApiResult<InteractionSummary>> {
+  const result = await callBackend<InteractionSummary>(
+    `/clients/${encodeURIComponent(clientId)}/interactions/${encodeURIComponent(interactionId)}`,
+    { method: "PATCH", body: { ...fields, expectedVersion } },
+  );
+
+  if (result.ok) {
+    refresh();
+  }
+
+  return result;
+}
+
+export async function deleteInteraction(
+  clientId: string,
+  interactionId: string,
+): Promise<ApiResult<void>> {
+  const result = await callBackend<void>(
+    `/clients/${encodeURIComponent(clientId)}/interactions/${encodeURIComponent(interactionId)}`,
     { method: "DELETE" },
   );
 
