@@ -30,6 +30,12 @@ carefully, change it.
 - get_client — one client in full: its contacts plus the fields summaries
   omit (website, whatTheyDo, notes, acquiredAt, source, owner, lostReason),
   and the version numbers the write tools need.
+- list_client_details — the bulk read: a page of clients in full, same
+  filters and paging as list_clients. Each entry carries client (exactly
+  what get_client returns, contacts included) and lastInteraction — the
+  newest log entry (kind, occurredOn, summary, followUpOn), or null when
+  nothing is logged. Use it whenever a task spans many clients instead of
+  calling get_client per client.
 - get_client_status_history — every status change one client has been
   through, newest first, with who made each move.
 - list_client_interactions — one client's outreach log, newest first. Each
@@ -94,7 +100,9 @@ carefully, change it.
 - Personalize only from fields that are actually populated — whatTheyDo,
   website, notes, industry, and the latest interactions. Never invent
   specifics about a client, and never repeat or contradict what the last
-  touch already said.
+  touch already said. list_client_details reads all of that (and each
+  client's latest touch) for a whole page in one call — start there, not
+  with a get_client per client.
 - Drafts belong in the campaign, not in chat: write them with
   add_campaign_message so the team can review, edit and track them. Keep
   each body plain text with blank-line paragraphs; the app renders the

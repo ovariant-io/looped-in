@@ -34,6 +34,11 @@ const TOOLS = [
     ask: "What do we know about Acme?",
   },
   {
+    name: "list_client_details",
+    what: "The bulk read — a page of clients in full, each with contacts and its latest logged touch, in one call.",
+    ask: "Draft personalized outreach for every lead we haven't touched lately.",
+  },
+  {
     name: "get_client_status_history",
     what: "The append-only audit trail of a client's status changes, and who made each move.",
     ask: "When did Acme become an active client?",

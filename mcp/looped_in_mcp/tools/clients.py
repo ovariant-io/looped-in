@@ -111,6 +111,32 @@ def _client_path(client_id: str, suffix: str = "") -> str:
     return f"/clients/{uuid_arg(client_id, 'client id')}{suffix}"
 
 
+def _list_query(
+    search: str | None,
+    industry: str | None,
+    status: str | None,
+    limit: int | None,
+    offset: int | None,
+) -> dict[str, str | int]:
+    """The query params `list_clients` and `list_client_details` share.
+
+    Only supplied values go on the wire — the API's defaults (and its clamping)
+    stay the single authority on what an absent filter or page bound means.
+    """
+    params: dict[str, str | int] = {}
+    if search is not None:
+        params["search"] = search
+    if industry is not None:
+        params["industry"] = industry
+    if status is not None:
+        params["status"] = status
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+    return params
+
+
 def register(mcp: FastMCP, deps: Deps) -> None:
     @mcp.tool(annotations=READ_ONLY)
     async def list_clients(
@@ -131,30 +157,51 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         `total` (matches before paging), `limit` (default 50, max 200 — an
         out-of-range request is clamped, and the response reports the limit
         actually applied) and `offset` — page until `offset + limit >= total`.
-        Summaries omit the prose fields; use `get_client` for the full record.
+        Summaries omit the prose fields; `get_client` has the full record for
+        one client, `list_client_details` for a whole page of them.
         """
-        params: dict[str, str | int] = {}
-        if search is not None:
-            params["search"] = search
-        if industry is not None:
-            params["industry"] = industry
-        if status is not None:
-            params["status"] = status
-        if limit is not None:
-            params["limit"] = limit
-        if offset is not None:
-            params["offset"] = offset
         api = require_api(deps)
-        return await api.get_json("/clients", token=caller_token(), params=params)
+        return await api.get_json(
+            "/clients",
+            token=caller_token(),
+            params=_list_query(search, industry, status, limit, offset),
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    async def list_client_details(
+        search: str | None = None,
+        industry: str | None = None,
+        status: ClientStatus | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        """The bulk read: a page of clients in full, each with its latest touch.
+
+        One call here replaces a `get_client` (and a recency-checking
+        `list_client_interactions`) per client — reach for it whenever a task
+        spans many clients: drafting a campaign, auditing notes, finding stale
+        relationships. Filters and paging are exactly `list_clients`'s. Each
+        entry in `clients` carries `client` — the full record `get_client`
+        would return, contacts included — and `lastInteraction`, the newest
+        entry of the outreach log (`kind`, `occurredOn`, `summary`,
+        `followUpOn`) or null when nothing is logged. For a single client
+        prefer `get_client`; for a full log, `list_client_interactions`.
+        """
+        api = require_api(deps)
+        return await api.get_json(
+            "/clients/details",
+            token=caller_token(),
+            params=_list_query(search, industry, status, limit, offset),
+        )
 
     @mcp.tool(annotations=READ_ONLY)
     async def get_client(client_id: str) -> dict:
         """One client in full, including its contacts.
 
-        The only reader that returns the prose fields (`website`, `whatTheyDo`,
-        `notes`) and the lifecycle detail (`acquiredAt`, `source`, `owner`,
-        `lostReason` — set only when status is `lost`); `status` itself is
-        already on every `list_clients` summary. `owner`,
+        Returns the prose fields (`website`, `whatTheyDo`, `notes`) and the
+        lifecycle detail (`acquiredAt`, `source`, `owner`, `lostReason` — set
+        only when status is `lost`) that `list_clients` summaries omit;
+        `list_client_details` returns this same record in bulk. `owner`,
         `createdBy` and `updatedBy` are raw Clerk user ids — there is no user
         directory, so compare against `whoami`'s `sub` to recognise the caller.
         `version` is the optimistic-concurrency token: read it here (contacts

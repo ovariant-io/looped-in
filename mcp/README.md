@@ -22,10 +22,13 @@ the API surface under `/clients`. The list is shared team data, so these answer
 - **Readers:** `list_clients` — paged summaries with `search` / `industry` /
   `status` filters (`status` is a closed set in the tool schema, so a bad value
   is refused rather than silently unfiltered as the API's `?status=` would be);
-  `get_client` — one client in full, including contacts and the prose and
-  lifecycle fields the summaries omit; `get_client_status_history` — the
-  append-only transition audit trail; `list_client_interactions` — the
-  per-client outreach log.
+  `list_client_details` — the bulk read: the same page in full, each row the
+  record `get_client` would return plus the client's latest interaction, so a
+  task spanning the whole list (campaign drafting, recency checks) is one call
+  instead of one per client; `get_client` — one client in full, including
+  contacts and the prose and lifecycle fields the summaries omit;
+  `get_client_status_history` — the append-only transition audit trail;
+  `list_client_interactions` — the per-client outreach log.
 - **Writers:** `create_client` / `update_client` / `delete_client`,
   `change_client_status` (the only writer of status — a transition is an
   event), `add_client_contact` / `update_client_contact` /
