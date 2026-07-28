@@ -93,6 +93,14 @@ class LoopedInApiClient:
         """POST `json` to `path` and return the parsed JSON body."""
         return (await self.request("POST", path, token=token, json=json)).json()
 
+    async def patch_json(self, path: str, *, token: str, json: Any) -> Any:
+        """PATCH `json` to `path` and return the parsed JSON body."""
+        return (await self.request("PATCH", path, token=token, json=json)).json()
+
+    async def delete(self, path: str, *, token: str) -> None:
+        """DELETE `path`. The API answers 204 No Content, so there is no body."""
+        await self.request("DELETE", path, token=token)
+
 
 def _problem_detail(response: httpx.Response) -> str:
     """A human-readable suffix from an RFC 7807 problem body, or "" if none.

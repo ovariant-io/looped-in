@@ -44,6 +44,26 @@ const TOOLS = [
     ask: "When did we last touch base with Acme?",
   },
   {
+    name: "add_client_interaction",
+    what: "Logs a touch on a client — kind, date, summary, and an optional follow-up date.",
+    ask: "Log that I called Acme today and need to follow up next Friday.",
+  },
+  {
+    name: "change_client_status",
+    what: "Moves a client through the pipeline — the one writer of status, with the audit trail kept for you.",
+    ask: "Mark Acme as an active client.",
+  },
+  {
+    name: "create_client / update_client",
+    what: "Adds a client, or edits its fields — updates send only what changed and detect concurrent edits.",
+    ask: "Add Acme Mining as a lead, sourced from the Perth expo.",
+  },
+  {
+    name: "add_client_contact / update_client_contact",
+    what: "Adds or edits the people on a client — a contact needs at least a name or an email.",
+    ask: "Add Jo Chen, jo@acme.example, as Acme's procurement lead.",
+  },
+  {
     name: "whoami",
     what: "Echoes the identity on your session token — user id, email, and the Clerk instance that issued it.",
     ask: "Who am I on Looped In?",
@@ -101,9 +121,11 @@ export function ClientGuide({ connectorLink }: { connectorLink: ReactNode }) {
           ))}
         </dl>
         <p className={styles.hint}>
-          All read-only for now — the assistant can look things up but can&apos;t
-          change the list. Every tool added to the server shows up in your
-          assistant automatically, no reconnecting.
+          The assistant reads and writes the same shared list the app does —
+          edits are recorded under your user id, concurrent edits are detected
+          rather than overwritten, and deletes (also available) ask you first.
+          Every tool added to the server shows up in your assistant
+          automatically, no reconnecting.
         </p>
       </section>
 

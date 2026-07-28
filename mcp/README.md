@@ -15,21 +15,32 @@ two identity tools —
   what the API saw. Proves the far half: this server → the Looped In API. It is
   the MCP counterpart of the frontend's `/me` page.
 
-— plus **read-only client-pipeline tools** (`tools/clients.py`), mapping 1:1
-onto the API's GET surface under `/clients`. The list is shared team data, so
-these answer "what is the state of *our* pipeline":
+— plus **client-pipeline CRUD tools** (`tools/clients.py`), mapping 1:1 onto
+the API surface under `/clients`. The list is shared team data, so these answer
+"what is the state of *our* pipeline" — and change it:
 
-- **`list_clients`** — paged summaries with `search` / `industry` / `status`
-  filters (`status` is a closed set in the tool schema, so a bad value is
-  refused rather than silently unfiltered as the API's `?status=` would be).
-- **`get_client`** — one client in full, including contacts and the prose and
-  lifecycle fields the summaries omit.
-- **`get_client_status_history`** — the append-only transition audit trail.
-- **`list_client_interactions`** — the per-client outreach log.
+- **Readers:** `list_clients` — paged summaries with `search` / `industry` /
+  `status` filters (`status` is a closed set in the tool schema, so a bad value
+  is refused rather than silently unfiltered as the API's `?status=` would be);
+  `get_client` — one client in full, including contacts and the prose and
+  lifecycle fields the summaries omit; `get_client_status_history` — the
+  append-only transition audit trail; `list_client_interactions` — the
+  per-client outreach log.
+- **Writers:** `create_client` / `update_client` / `delete_client`,
+  `change_client_status` (the only writer of status — a transition is an
+  event), `add_client_contact` / `update_client_contact` /
+  `delete_client_contact`, and `add_client_interaction` /
+  `update_client_interaction` / `delete_client_interaction`.
 
-There is deliberately **no write surface yet** — mutations need the API's
-`expectedVersion` concurrency flow and a considered answer to how much an agent
-may change a shared list. An unauthenticated `GET /health` rounds things out.
+The write policy is deliberate, not inherited from the API. Every update
+requires `expected_version` from a fresh read, so a concurrent edit surfaces as
+a 409 instead of an overwrite. The API's PATCH is a full replacement where null
+*clears* a field — right for a form resending a row it just loaded, hostile to
+an agent that omits what it didn't mean to change — so the update tools merge:
+they re-read the row, keep every unmentioned field, and null out only fields
+named in `clear`. Deletes are real deletes; their schemas say so
+(`destructiveHint`) and their docstrings direct the agent to confirm with the
+user first. An unauthenticated `GET /health` rounds things out.
 
 Adding a domain is a new module under `looped_in_mcp/tools/` and one line in
 `registry.py`; tools stay thin (validate input → call `deps.api` → shape the
@@ -229,7 +240,7 @@ API), and **tools** (one module per domain).
 | `looped_in_mcp/backend.py` | `LoopedInApiClient` — the **single seam** to the .NET API (token forwarding, RFC 7807 error mapping). |
 | `looped_in_mcp/deps.py` | `Deps` — shared resources (the API client) handed to each tool module. |
 | `looped_in_mcp/app.py` | `create_app()` — assembles auth + deps + tools + middleware into the ASGI app. |
-| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the `READ_ONLY` annotations constant. `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the read-only client-pipeline tools. |
+| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the annotation vocabularies (`READ_ONLY`, `ADDITIVE`, `OVERWRITE`, `REMOVAL`). `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the client-pipeline CRUD tools. |
 | `requirements.txt` | Local dev ranges: `fastmcp` (3.x), `pydantic`, `httpx`, `python-dotenv`, `mangum` (Lambda), `uvicorn` (local). |
 | `requirements-lambda.lock` | Hash-locked, platform-pinned install used by the deploy. |
 | `Dockerfile` | `python:3.13-slim`, non-root, used by the `mcp` Compose profile. |

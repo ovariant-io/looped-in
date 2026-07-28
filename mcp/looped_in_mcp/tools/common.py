@@ -16,9 +16,16 @@ from fastmcp.server.dependencies import get_access_token
 from looped_in_mcp.backend import LoopedInApiClient
 from looped_in_mcp.deps import Deps
 
-# These tools never mutate anything — say so machine-readably (absent annotations,
-# MCP clients must assume a tool may be destructive).
+# Tool-annotation vocabularies, machine-readable per the MCP spec (absent
+# annotations, clients must assume the worst). Three write shades because a
+# client may gate its confirmation UI on them: a create only ever adds a row, an
+# update overwrites fields someone else may have just written, and a delete is
+# the one that cannot be undone (though re-running it changes nothing further,
+# hence idempotent).
 READ_ONLY = {"readOnlyHint": True, "idempotentHint": True}
+ADDITIVE = {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False}
+OVERWRITE = {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": False}
+REMOVAL = {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True}
 
 
 def caller_token() -> str:
