@@ -60,6 +60,49 @@
   border-radius: 4px;
 }
 
+/* ---- client toggle ---- */
+
+.clientToggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.clientToggleButton {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 15%, transparent);
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.clientToggleButton:hover {
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.clientToggleActive,
+.clientToggleActive:hover {
+  background: var(--foreground);
+  border-color: transparent;
+  color: var(--background);
+}
+
+/* ---- "what this step does" callout ---- */
+
+.explain {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--foreground) 5%, transparent);
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+}
+
 /* ---- connector link ---- */
 
 .copyField {
@@ -98,6 +141,44 @@
 
 .copyButton:hover {
   opacity: 0.85;
+}
+
+/* Multi-line variant for the assistant prompt: a label + copy bar over a
+   scrollable pre, so a long prompt never stretches the page. */
+.copyBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--foreground) 15%, transparent);
+  background: var(--background);
+}
+
+.copyBlockBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.copyBlockLabel {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: color-mix(in srgb, var(--foreground) 55%, transparent);
+}
+
+.copyBlockText {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: color-mix(in srgb, var(--foreground) 80%, transparent);
 }
 
 .copyError {
