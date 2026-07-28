@@ -276,6 +276,24 @@ public static class ClientValidation
     public static int PageOffset(int? offset) => offset is > 0 ? offset.Value : 0;
 
     /// <summary>
+    /// A recognised status for <c>?status=</c>, or null meaning "no filter".
+    /// </summary>
+    /// <remarks>
+    /// An unrecognised value is <b>ignored rather than matched literally</b>. Passing it through
+    /// would compare <c>status = 'bogus'</c>, which matches nothing and renders as an empty list —
+    /// indistinguishable, to whoever is looking, from a database with no clients in it. The
+    /// clients page already degrades a hand-typed value this way before it builds the query; doing
+    /// it here as well means a direct caller (curl, an MCP tool) gets the same answer as the
+    /// screen. <c>?industry=</c> gets no equivalent because it is free text with no closed set to
+    /// check against.
+    /// </remarks>
+    public static string? StatusFilter(string? status)
+    {
+        var value = Clean(status);
+        return value is not null && ClientStatuses.Contains(value) ? value : null;
+    }
+
+    /// <summary>
     /// Turns a search term into an <c>ILIKE</c> pattern with the wildcards escaped, so searching
     /// for <c>100%</c> finds the literal string rather than everything starting with "100".
     /// Returns null for a blank term, which the query reads as "no filter".

@@ -294,6 +294,11 @@ public sealed class ClientStore
                 // Zero rows means either "no such client" or "someone else got there first".
                 // One extra query tells the two apart, and the caller needs to: a 404 and a 409
                 // ask the user to do completely different things.
+                //
+                // Close first: every command here draws its own connection from the pool, so
+                // running the disambiguation under an open reader would hold two at once — on
+                // exactly the contended path where a 409 storm means concurrency is already high.
+                await reader.CloseAsync();
                 return await ClientExistsAsync(id, cancellationToken)
                     ? MutationResult<ClientDetail>.VersionConflict()
                     : MutationResult<ClientDetail>.NotFound();
@@ -366,6 +371,9 @@ public sealed class ClientStore
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
             if (!await reader.ReadAsync(cancellationToken))
             {
+                // Closed before the disambiguation for the same reason as UpdateAsync: one
+                // pooled connection at a time.
+                await reader.CloseAsync();
                 return await ClientExistsAsync(id, cancellationToken)
                     ? MutationResult<ClientDetail>.VersionConflict()
                     : MutationResult<ClientDetail>.NotFound();
@@ -525,6 +533,17 @@ public sealed class ClientStore
     /// Every interaction logged against a client, newest first, or null when no such client
     /// exists — so the endpoint can 404 rather than serve an empty log for a deleted id.
     /// </summary>
+    /// <remarks>
+    /// <b>Unpaged on purpose, unlike <see cref="ListAsync"/>.</b> Both child collections on a
+    /// client's page — this log and its contacts — are read whole, because the page shows them
+    /// whole and a pager over five rows is worse than no pager. The asymmetry is recorded rather
+    /// than left implicit because an interaction log is the one table here that only ever grows:
+    /// contacts stay in single digits, touches accumulate forever. Paging both is the fix when a
+    /// real client's history stops fitting a screen — the same shape of deferral as pg_trgm for
+    /// search, and for the same reason (the index already covers the read; what gives out first
+    /// is the payload, not the scan). Deliberately not done at ~200 clients with a handful of
+    /// touches each.
+    /// </remarks>
     public async Task<IReadOnlyList<InteractionSummary>?> ListInteractionsAsync(
         Guid clientId,
         CancellationToken cancellationToken)

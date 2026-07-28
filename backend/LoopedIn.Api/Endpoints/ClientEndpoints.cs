@@ -65,6 +65,8 @@ public static class ClientEndpoints
 
     /// <summary>
     /// A page of clients, filtered by <c>?search=</c>, <c>?industry=</c> and <c>?status=</c>.
+    /// An unrecognised <c>?status=</c> is ignored rather than refused — see
+    /// <see cref="ClientValidation.StatusFilter"/>.
     /// </summary>
     private static async Task<IResult> ListAsync(
         IServiceProvider services,
@@ -77,7 +79,7 @@ public static class ClientEndpoints
         Results.Ok(await Store(services).ListAsync(
             ClientValidation.SearchPattern(search),
             ClientValidation.Clean(industry),
-            ClientValidation.Clean(status),
+            ClientValidation.StatusFilter(status),
             ClientValidation.PageSize(limit),
             ClientValidation.PageOffset(offset),
             cancellationToken));

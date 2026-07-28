@@ -69,9 +69,6 @@ export function ClientDetailView({
   const [editing, setEditing] = useState<number | null>(null);
   const [addingContact, setAddingContact] = useState(false);
   const [editingContact, setEditingContact] = useState<EditTarget | null>(null);
-  // Controlled (unlike the frozen edit forms) so the lost-reason input can appear the moment
-  // "Lost" is selected, before anything is submitted.
-  const [pendingStatus, setPendingStatus] = useState<ClientStatus>(client.status);
   const [addingInteraction, setAddingInteraction] = useState(false);
   const [editingInteraction, setEditingInteraction] = useState<EditTarget | null>(null);
 
@@ -113,18 +110,16 @@ export function ClientDetailView({
     });
   }
 
-  function onChangeStatus(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const data = new FormData(event.currentTarget);
-    // Read before the transition: the reason input unmounts if the select moves off "lost".
-    const lostReason = pendingStatus === "lost" ? value(data, "lostReason") : null;
-
+  function onChangeStatus(nextStatus: ClientStatus, lostReason: string | null) {
     startTransition(async () => {
       reset();
-      // `client.version` from live props is honest HERE, unlike in the frozen edit forms: this
-      // panel renders live, so the version always matches the status the user is looking at. A
-      // concurrent transition still lands as a 409 with the reload affordance.
-      const result = await changeClientStatus(client.id, pendingStatus, lostReason, client.version);
+      // `client.version` from live props is honest HERE, unlike in the frozen edit forms — but
+      // only because <StatusForm> is keyed on `client.status`. The version and the status being
+      // submitted have to describe the same row: a transition by someone else remounts the form
+      // and discards any half-made selection, so a live version can never be paired with a choice
+      // made against a status that has since moved. A concurrent transition still lands as a 409
+      // with the reload affordance.
+      const result = await changeClientStatus(client.id, nextStatus, lostReason, client.version);
 
       if (!result.ok) {
         setFailure({ status: result.status, message: result.error });
@@ -323,8 +318,8 @@ export function ClientDetailView({
       <h1 className={styles.title}>{client.name}</h1>
 
       <div className={styles.provenance}>
-        <span>{describeActor("Added", client.createdBy, client.createdAt)}</span>
-        <span>{describeActor("Updated", client.updatedBy, client.updatedAt)}</span>
+        <span>{describeActor("Added", client.createdBy, client.createdAt, myId)}</span>
+        <span>{describeActor("Updated", client.updatedBy, client.updatedAt, myId)}</span>
         <span>v{client.version}</span>
       </div>
 
@@ -375,37 +370,16 @@ export function ClientDetailView({
           </div>
         ) : null}
 
-        <form className={styles.formActions} onSubmit={onChangeStatus}>
-          <select
-            className={styles.input}
-            value={pendingStatus}
-            aria-label="New status"
-            disabled={isPending}
-            onChange={(event) => setPendingStatus(event.target.value as ClientStatus)}
-          >
-            {CLIENT_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {STATUS_LABELS[status]}
-              </option>
-            ))}
-          </select>
-          {pendingStatus === "lost" ? (
-            <input
-              className={styles.input}
-              name="lostReason"
-              placeholder="Why was it lost? (optional)"
-              maxLength={500}
-              defaultValue={client.lostReason ?? ""}
-            />
-          ) : null}
-          <button
-            type="submit"
-            className={`${styles.primary} ${styles.small}`}
-            disabled={isPending}
-          >
-            {isPending ? "Saving…" : "Change status"}
-          </button>
-        </form>
+        {/* Keyed on the current status so a transition arriving from the server — anyone's,
+            including this user's own — remounts the control and resets its pending selection.
+            See the note on StatusForm. */}
+        <StatusForm
+          key={client.status}
+          status={client.status}
+          lostReason={client.lostReason}
+          isPending={isPending}
+          onSubmit={onChangeStatus}
+        />
 
         <div className={styles.formActions}>
           {myId && client.owner !== myId ? (
@@ -790,6 +764,73 @@ export function ClientDetailView({
   );
 }
 
+/**
+ * The status-transition control.
+ *
+ * **Its own component so that it can be keyed on the client's current status**, and the pending
+ * selection cannot live in the parent. `useState` seeds once: a selection made against an older
+ * status would survive every `refresh()` while the badge, the history and — crucially — the
+ * version all moved on beneath it. Because the version handed to the API is read live at submit
+ * time, that combination does not 409; it succeeds, silently reverting whoever transitioned the
+ * client in between. Remounting on `client.status` is what keeps the submitted status and the
+ * submitted version describing the same row.
+ *
+ * The select is controlled (unlike the frozen edit forms) so the lost-reason input can appear the
+ * moment "Lost" is chosen, before anything is submitted.
+ */
+function StatusForm({
+  status,
+  lostReason,
+  isPending,
+  onSubmit,
+}: {
+  status: ClientStatus;
+  lostReason: string | null;
+  isPending: boolean;
+  onSubmit: (nextStatus: ClientStatus, lostReason: string | null) => void;
+}) {
+  const [pending, setPending] = useState<ClientStatus>(status);
+
+  return (
+    <form
+      className={styles.formActions}
+      onSubmit={(event) => {
+        event.preventDefault();
+        // Read synchronously, before the parent starts its transition: the reason input unmounts
+        // the moment the select moves off "lost".
+        const data = new FormData(event.currentTarget);
+        onSubmit(pending, pending === "lost" ? value(data, "lostReason") : null);
+      }}
+    >
+      <select
+        className={styles.input}
+        value={pending}
+        aria-label="New status"
+        disabled={isPending}
+        onChange={(event) => setPending(event.target.value as ClientStatus)}
+      >
+        {CLIENT_STATUSES.map((option) => (
+          <option key={option} value={option}>
+            {STATUS_LABELS[option]}
+          </option>
+        ))}
+      </select>
+      {pending === "lost" ? (
+        <input
+          className={styles.input}
+          name="lostReason"
+          placeholder="Why was it lost? (optional)"
+          maxLength={500}
+          defaultValue={lostReason ?? ""}
+        />
+      ) : null}
+      <button type="submit" className={`${styles.primary} ${styles.small}`} disabled={isPending}>
+        {isPending ? "Saving…" : "Change status"}
+      </button>
+    </form>
+  );
+}
+
 function ContactFields({ contact }: { contact?: ContactSummary }) {
   return (
     <div className={styles.formGrid}>
@@ -956,12 +997,16 @@ function actorName(actor: string, myId: string | null): string {
  * Renders `created_by` / `updated_by`, which hold the Clerk subject of whoever wrote the row —
  * except on seeded rows, which carry the import sentinel forever. Showing that as a raw
  * `import:…` string would be noise; naming it is the point of having the sentinel.
+ *
+ * Everything else goes through {@link actorName}, so one page never prints a bare Clerk id in one
+ * line and "you" for that same person in the next. The sentinel keeps its own phrasing here only
+ * because "Added … from the outreach spreadsheet" reads as provenance where a bare noun does not.
  */
-function describeActor(verb: string, actor: string, at: string): string {
+function describeActor(verb: string, actor: string, at: string, myId: string | null): string {
   const when = at.slice(0, 10);
   return actor === IMPORT_SENTINEL
     ? `${verb} ${when} · from the outreach spreadsheet`
-    : `${verb} ${when} · ${actor}`;
+    : `${verb} ${when} · ${actorName(actor, myId)}`;
 }
 
 /** Trimmed form value; empty means "clear this field", because PATCH replaces rather than merges. */
