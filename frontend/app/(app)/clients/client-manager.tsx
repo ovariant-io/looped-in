@@ -265,7 +265,10 @@ export function ClientManager({
               <span className={styles.label}>Website</span>
               {/* Deliberately NOT type="url", which demands a scheme and would reject the
                   "looped-in.com.au" people actually type. The API adds https:// and judges the
-                  result — same reasoning as the contact email field one page over. */}
+                  result — same reasoning as the contact email field one page over. maxLength
+                  mirrors the column rather than the effective limit for a scheme-less entry
+                  (492), which would reject a legitimate 500-character URL that carries its own
+                  scheme; the API explains the difference. Same note on the detail page's field. */}
               <input
                 className={styles.input}
                 name="website"

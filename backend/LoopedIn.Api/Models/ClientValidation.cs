@@ -167,6 +167,14 @@ public static class ClientValidation
     /// dotted host.
     /// </para>
     /// <para>
+    /// <b>The guarantee is narrow, and worth stating exactly</b>, because the rules below are easy
+    /// to over-read: a stored value is an absolute http(s) URL whose visible text names the host a
+    /// browser will actually dial. It is <em>not</em> a promise that the host is who it appears to
+    /// be — <c>looped-in.com.au.evil.com</c> is a subdomain of <c>evil.com</c>, reads like the
+    /// client's own domain, and no validator without a domain allow-list refuses it. The userinfo
+    /// and ASCII-host rules defend the narrow guarantee; nothing here defends the broad one.
+    /// </para>
+    /// <para>
     /// Deliberately looser than a URL validator: no reachability check, no TLD list, no
     /// lowercasing or trailing-slash normalization. A stored value should still read as the thing
     /// the user typed. Unlike <see cref="IsPlausibleEmail"/> this has no importer to stay
@@ -201,8 +209,18 @@ public static class ClientValidation
 
         // Against the normalized value: the prefix is stored, so it is the prefix that has to fit
         // the column. Checked before the parse so an absurd input fails with the useful message.
-        if (!Fits(candidate, MaxWebsiteLength, "website", out error))
+        //
+        // Not Fits(), because its one-length message reads as a lie here. The browser's maxLength
+        // caps what was TYPED and cannot know whether a scheme is about to be added, so a value
+        // the field accepted at 500 characters can be refused at 508 — and "that website is 508
+        // characters" is baffling to someone who counted 500. Naming both lengths is what makes
+        // the two limits legible as one rule.
+        if (candidate.Length > MaxWebsiteLength)
         {
+            error = candidate.Length == trimmed.Length
+                ? $"That website is {trimmed.Length} characters; the limit is {MaxWebsiteLength}."
+                : $"That website is {trimmed.Length} characters, and {candidate.Length} once "
+                    + $"https:// is added; the limit is {MaxWebsiteLength}.";
             return false;
         }
 
@@ -220,6 +238,25 @@ public static class ClientValidation
         {
             error = $"\"{trimmed}\" doesn't look like a web address. "
                 + "Use something like looped-in.com.au or https://looped-in.com.au.";
+            return false;
+        }
+
+        // A non-ASCII host is the one way left to break the narrow guarantee above. Browsers apply
+        // IDNA before resolving, and several Unicode characters normalize to a label separator:
+        // `looped-in.com.au。evil.com` (U+3002, and U+FF0E and U+FF61 alike) READS as the client's
+        // own domain and RESOLVES as a subdomain of evil.com. Uri.Host keeps what was typed while
+        // Uri.IdnHost shows what is dialled, and the two differing is precisely the divergence to
+        // refuse — a whole class of homograph with it, since the Cyrillic 'а' in `аpple.com` fails
+        // here too. A genuine internationalised domain stays storable as the punycode that
+        // resolves anyway, so this costs nothing real.
+        if (uri.Host.Any(character => character > 127))
+        {
+            // IdnHost returns the Unicode host UNCHANGED when a label is too long to encode, so
+            // the suggestion is only offered when it actually produced an ASCII form.
+            var punycode = uri.IdnHost;
+            error = $"\"{trimmed}\" has a non-ASCII character in its domain name, which can read "
+                + "as one site and open another. Use the domain's ASCII (punycode) form"
+                + (punycode.Any(character => character > 127) ? "." : $": {punycode}");
             return false;
         }
 

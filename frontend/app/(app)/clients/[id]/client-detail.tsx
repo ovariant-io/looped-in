@@ -2,7 +2,7 @@
 
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent, type ReactNode } from "react";
 import {
   addContact,
   addInteraction,
@@ -462,7 +462,13 @@ export function ClientDetailView({
               {/* Deliberately NOT type="url": that demands a scheme and would reject the
                   "looped-in.com.au" people actually type. The API prepends https:// and then
                   judges the result — the same division of labour as the contact email field,
-                  where the browser's stricter rule would block edits the server would accept. */}
+                  where the browser's stricter rule would block edits the server would accept.
+
+                  maxLength mirrors the column, which is deliberately NOT the effective limit for
+                  every input: the API measures the value after https:// is added, so a
+                  scheme-less entry really stops at 492. Capping the field at 492 would reject a
+                  legitimate 500-character URL that already carries its scheme, so the field stays
+                  permissive and the API names both lengths when the eight characters bite. */}
               <input
                 className={styles.input}
                 name="website"
@@ -526,14 +532,14 @@ export function ClientDetailView({
           <div className={styles.formGrid}>
             <Detail label="Industry" text={client.industry} />
             <Detail label="Location" text={client.location} />
-            <div className={styles.field}>
-              <span className={styles.label}>Website</span>
-              <span>
-                {client.website ? (
-                  // Safe in an href without escaping here because the API only ever stores an
-                  // absolute http(s) URL — see ClientDetail.website. `noreferrer` as well as
-                  // `noopener`: the referrer would otherwise tell the destination which client
-                  // page someone was reading.
+            <Detail
+              label="Website"
+              // Safe in an href without escaping here because the API only ever stores an
+              // absolute http(s) URL with an ASCII host — see ClientDetail.website. `noreferrer`
+              // as well as `noopener`: the referrer would otherwise tell the destination which
+              // client page someone was reading. Null falls through to Detail's "Not recorded".
+              text={
+                client.website ? (
                   <a
                     className={styles.externalLink}
                     href={client.website}
@@ -542,11 +548,9 @@ export function ClientDetailView({
                   >
                     {client.website}
                   </a>
-                ) : (
-                  <span className={styles.count}>Not recorded</span>
-                )}
-              </span>
-            </div>
+                ) : null
+              }
+            />
           </div>
           {client.whatTheyDo ? (
             <div className={styles.field}>
@@ -1026,7 +1030,15 @@ function interactionFields(data: FormData): InteractionFields {
   };
 }
 
-function Detail({ label, text }: { label: string; text: string | null }) {
+/**
+ * One labelled cell of the read-only field grid.
+ *
+ * `text` is a ReactNode, not a string, so a cell that renders markup — the website's anchor —
+ * goes through this rather than hand-rolling the same `div > label + value` shape beside it. A
+ * copy is how the grid drifts: the next change to a cell's markup reaches every field but the
+ * copied one. `null` still means "not recorded", which is what the API sends for an empty field.
+ */
+function Detail({ label, text }: { label: string; text: ReactNode }) {
   return (
     <div className={styles.field}>
       <span className={styles.label}>{label}</span>

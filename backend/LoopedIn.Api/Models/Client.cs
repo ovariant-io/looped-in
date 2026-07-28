@@ -34,9 +34,11 @@ public sealed record ClientSummary(
 /// what keeps the <c>clients_lost_reason_shape</c> CHECK unviolable from a field edit.
 /// </summary>
 /// <param name="Website">
-/// An absolute <c>http(s)</c> URL, or null. Normalized by <see cref="ClientValidation"/> on the
-/// way in rather than sanitized on the way out, because the client renders it straight into an
-/// <c>href</c> — every stored value is one the API has already vouched for.
+/// An absolute <c>http(s)</c> URL with an ASCII host, or null. Normalized by
+/// <see cref="ClientValidation"/> on the way in rather than sanitized on the way out, because the
+/// client renders it straight into an <c>href</c>. What the API vouches for is narrow and exact:
+/// the value is safe <em>in an href</em> and its visible text names the host a browser will dial.
+/// It is not a verified identity — see <see cref="ClientValidation.TryReadWebsite"/>.
 /// </param>
 /// <param name="WhatTheyDo">Free text: what this organisation actually does.</param>
 public sealed record ClientDetail(
