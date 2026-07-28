@@ -70,11 +70,12 @@ export async function updateClient(
 }
 
 /**
- * Edits a client from a list row, where `notes`, `source` and `owner` are not on screen.
+ * Edits a client from a list row, where everything but name, industry and location is off screen.
  *
- * PATCH replaces every mutable field, so sending nulls for them from a list row would silently
- * wipe all three. This reads the current values first and passes them through unchanged — the
- * `Omit<>` on the parameter is what makes forgetting one a compile error rather than a wipe.
+ * PATCH replaces every mutable field, so sending nulls for the absent ones from a list row would
+ * silently wipe them all. This reads the current values first and passes them through unchanged —
+ * the `Omit<>` on the parameter is what makes forgetting one a compile error rather than a wipe,
+ * and it is why adding a field to {@link ClientFields} surfaces here rather than in production.
  *
  * The read cannot open a lost-update window, because `expectedVersion` still comes from the
  * **caller** — the version the row was rendered with. If anyone changed the client between the
@@ -83,7 +84,10 @@ export async function updateClient(
  */
 export async function updateClientFromRow(
   id: string,
-  fields: Omit<ClientFields, "notes" | "source" | "owner">,
+  fields: Omit<
+    ClientFields,
+    "website" | "whatTheyDo" | "notes" | "source" | "owner"
+  >,
   expectedVersion: number,
 ): Promise<ApiResult<ClientDetail>> {
   const current = await callBackend<ClientDetail>(
@@ -98,6 +102,8 @@ export async function updateClientFromRow(
     id,
     {
       ...fields,
+      website: current.data.website,
+      whatTheyDo: current.data.whatTheyDo,
       notes: current.data.notes,
       source: current.data.source,
       owner: current.data.owner,

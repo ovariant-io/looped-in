@@ -83,7 +83,8 @@ public sealed class ClientStore
     // ReadInteraction, ReadHistoryEntry) — add a column and you renumber the ordinals in the
     // same change, or the mismatch surfaces as an InvalidCastException at runtime.
     private const string ClientColumns =
-        "id, name, industry, location, notes, status, acquired_at, source, owner, lost_reason, "
+        "id, name, industry, location, website, what_they_do, notes, "
+        + "status, acquired_at, source, owner, lost_reason, "
         + "version, created_at, created_by, updated_at, updated_by";
 
     private const string ContactColumns = "id, full_name, email, role_title, notes, version, updated_at";
@@ -223,14 +224,18 @@ public sealed class ClientStore
         // 'lead' default and only the status-transition statement ever moves it.
         await using var command = _dataSource.CreateCommand($"""
             select count(*) from clients where lower(name) = lower(@name);
-            insert into clients (id, name, industry, location, notes, source, owner, created_by, updated_by)
-            values (@id, @name, @industry, @location, @notes, @source, @owner, @actor, @actor)
+            insert into clients (id, name, industry, location, website, what_they_do, notes,
+                                 source, owner, created_by, updated_by)
+            values (@id, @name, @industry, @location, @website, @whatTheyDo, @notes,
+                    @source, @owner, @actor, @actor)
             returning {ClientColumns};
             """);
         command.Parameters.Add(Uuid("id", id));
         command.Parameters.Add(Text("name", fields.Name));
         command.Parameters.Add(Text("industry", fields.Industry));
         command.Parameters.Add(Text("location", fields.Location));
+        command.Parameters.Add(Text("website", fields.Website));
+        command.Parameters.Add(Text("whatTheyDo", fields.WhatTheyDo));
         command.Parameters.Add(Text("notes", fields.Notes));
         command.Parameters.Add(Text("source", fields.Source));
         command.Parameters.Add(Text("owner", fields.Owner));
@@ -270,7 +275,8 @@ public sealed class ClientStore
         // of a plain field edit. ChangeStatusAsync is the only writer of those columns.
         await using (var command = _dataSource.CreateCommand($"""
             update clients
-            set name = @name, industry = @industry, location = @location, notes = @notes,
+            set name = @name, industry = @industry, location = @location,
+                website = @website, what_they_do = @whatTheyDo, notes = @notes,
                 source = @source, owner = @owner,
                 version = version + 1, updated_at = now(), updated_by = @actor
             where id = @id and version = @expected
@@ -282,6 +288,8 @@ public sealed class ClientStore
             command.Parameters.Add(Text("name", fields.Name));
             command.Parameters.Add(Text("industry", fields.Industry));
             command.Parameters.Add(Text("location", fields.Location));
+            command.Parameters.Add(Text("website", fields.Website));
+            command.Parameters.Add(Text("whatTheyDo", fields.WhatTheyDo));
             command.Parameters.Add(Text("notes", fields.Notes));
             command.Parameters.Add(Text("source", fields.Source));
             command.Parameters.Add(Text("owner", fields.Owner));
@@ -759,18 +767,20 @@ public sealed class ClientStore
         Name: reader.GetString(1),
         Industry: NullableString(reader, 2),
         Location: NullableString(reader, 3),
-        Notes: NullableString(reader, 4),
-        Status: reader.GetString(5),
-        AcquiredAt: NullableDate(reader, 6),
-        Source: NullableString(reader, 7),
-        Owner: NullableString(reader, 8),
-        LostReason: NullableString(reader, 9),
+        Website: NullableString(reader, 4),
+        WhatTheyDo: NullableString(reader, 5),
+        Notes: NullableString(reader, 6),
+        Status: reader.GetString(7),
+        AcquiredAt: NullableDate(reader, 8),
+        Source: NullableString(reader, 9),
+        Owner: NullableString(reader, 10),
+        LostReason: NullableString(reader, 11),
         Contacts: [],
-        Version: reader.GetInt64(10),
-        CreatedAt: reader.GetFieldValue<DateTimeOffset>(11),
-        CreatedBy: reader.GetString(12),
-        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(13),
-        UpdatedBy: reader.GetString(14));
+        Version: reader.GetInt64(12),
+        CreatedAt: reader.GetFieldValue<DateTimeOffset>(13),
+        CreatedBy: reader.GetString(14),
+        UpdatedAt: reader.GetFieldValue<DateTimeOffset>(15),
+        UpdatedBy: reader.GetString(16));
 
     private static ContactSummary ReadContact(NpgsqlDataReader reader) => new(
         Id: reader.GetGuid(0),

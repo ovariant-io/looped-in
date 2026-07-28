@@ -90,16 +90,34 @@ export type ContactSummary = {
 };
 
 /**
- * One client with its contacts and its notes. `notes` is absent from {@link ClientSummary}
- * because a list of 50 rows does not need up to 4 000 characters each — which is also why an
- * edit started from a list row has to fetch the detail before it can PATCH (PATCH is a full
- * replacement, so an omitted `notes` would clear the field).
+ * One client with its contacts, its prose, and its pipeline state.
+ *
+ * `notes` and `whatTheyDo` are absent from {@link ClientSummary} because a list of 50 rows does
+ * not need thousands of characters each, and `website` follows them for a plainer reason: the
+ * table is already seven columns wide and a client's identity belongs on its own page. That is
+ * why an edit started from a list row has to fetch the detail before it can PATCH — PATCH is a
+ * full replacement, so any omitted field would be cleared rather than left alone.
  */
 export type ClientDetail = {
   id: string;
   name: string;
   industry: string | null;
   location: string | null;
+  /**
+   * An absolute http(s) URL with an ASCII host, normalized by the API — a scheme-less
+   * `looped-in.com.au` is stored as `https://looped-in.com.au`, and anything that isn't a web
+   * address is a 400. That is what makes it safe to drop straight into an `href`: without the
+   * scheme it would resolve as a relative path, and without the allow-list a `javascript:` value
+   * would be live on click.
+   *
+   * **Safe in an `href` is the whole promise.** The visible text names the host a browser will
+   * dial, and nothing more — this is not a verified identity. `looped-in.com.au.evil.com` reads
+   * like a client's own domain and is a perfectly valid value, so never treat it as proof of who
+   * is on the other end.
+   */
+  website: string | null;
+  /** Free text: what this organisation actually does. */
+  whatTheyDo: string | null;
   notes: string | null;
   status: ClientStatus;
   /** yyyy-MM-dd, set by the API on the first transition to active_client. Display only. */
@@ -161,7 +179,7 @@ export type CreateClientResponse = {
 };
 
 /**
- * The mutable fields of a client. All six are always sent — PATCH replaces, it does not merge.
+ * The mutable fields of a client. All eight are always sent — PATCH replaces, it does not merge.
  * Status, acquiredAt and lostReason are deliberately absent: they move only through the
  * status-transition action, never through PATCH.
  */
@@ -169,6 +187,9 @@ export type ClientFields = {
   name: string;
   industry: string | null;
   location: string | null;
+  /** Sent as typed; the API normalizes and validates it. See {@link ClientDetail.website}. */
+  website: string | null;
+  whatTheyDo: string | null;
   notes: string | null;
   source: string | null;
   owner: string | null;

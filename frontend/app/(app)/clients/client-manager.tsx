@@ -111,6 +111,8 @@ export function ClientManager({
         name: value(data, "name") ?? "",
         industry: value(data, "industry"),
         location: value(data, "location"),
+        website: value(data, "website"),
+        whatTheyDo: value(data, "whatTheyDo"),
         notes: value(data, "notes"),
         // Not on this form — a new client starts unsourced and unowned, at the 'lead' default.
         source: null,
@@ -259,6 +261,27 @@ export function ClientManager({
               <span className={styles.label}>Location</span>
               <input className={styles.input} name="location" maxLength={100} />
             </label>
+            <label className={styles.field}>
+              <span className={styles.label}>Website</span>
+              {/* Deliberately NOT type="url", which demands a scheme and would reject the
+                  "looped-in.com.au" people actually type. The API adds https:// and judges the
+                  result — same reasoning as the contact email field one page over. maxLength
+                  mirrors the column rather than the effective limit for a scheme-less entry
+                  (492), which would reject a legitimate 500-character URL that carries its own
+                  scheme; the API explains the difference. Same note on the detail page's field. */}
+              <input
+                className={styles.input}
+                name="website"
+                type="text"
+                inputMode="url"
+                maxLength={500}
+                placeholder="looped-in.com.au"
+              />
+            </label>
+            <label className={`${styles.field} ${styles.wide}`}>
+              <span className={styles.label}>What they do</span>
+              <textarea className={styles.textarea} name="whatTheyDo" maxLength={2000} />
+            </label>
             <label className={`${styles.field} ${styles.wide}`}>
               <span className={styles.label}>Notes</span>
               <textarea className={styles.textarea} name="notes" maxLength={4000} />
@@ -386,7 +409,8 @@ export function ClientManager({
                             Cancel
                           </button>
                           <span className={styles.hint}>
-                            Notes are edited on the client&apos;s own page.
+                            Website, what they do, and notes are edited on the client&apos;s own
+                            page — they are preserved unchanged by a save from here.
                           </span>
                         </div>
                       </form>
