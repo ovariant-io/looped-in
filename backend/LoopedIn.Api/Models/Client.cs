@@ -33,11 +33,19 @@ public sealed record ClientSummary(
 /// replaces the descriptive fields and deliberately cannot touch the lifecycle ones, which is
 /// what keeps the <c>clients_lost_reason_shape</c> CHECK unviolable from a field edit.
 /// </summary>
+/// <param name="Website">
+/// An absolute <c>http(s)</c> URL, or null. Normalized by <see cref="ClientValidation"/> on the
+/// way in rather than sanitized on the way out, because the client renders it straight into an
+/// <c>href</c> — every stored value is one the API has already vouched for.
+/// </param>
+/// <param name="WhatTheyDo">Free text: what this organisation actually does.</param>
 public sealed record ClientDetail(
     Guid Id,
     string Name,
     string? Industry,
     string? Location,
+    string? Website,
+    string? WhatTheyDo,
     string? Notes,
     string Status,
     DateOnly? AcquiredAt,
@@ -89,6 +97,8 @@ public sealed record CreateClientRequest(
     string? Name,
     string? Industry,
     string? Location,
+    string? Website,
+    string? WhatTheyDo,
     string? Notes,
     string? Source,
     string? Owner);
@@ -103,6 +113,8 @@ public sealed record UpdateClientRequest(
     string? Name,
     string? Industry,
     string? Location,
+    string? Website,
+    string? WhatTheyDo,
     string? Notes,
     string? Source,
     string? Owner,

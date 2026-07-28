@@ -89,6 +89,8 @@ export function ClientDetailView({
           name: value(data, "name") ?? "",
           industry: value(data, "industry"),
           location: value(data, "location"),
+          website: value(data, "website"),
+          whatTheyDo: value(data, "whatTheyDo"),
           notes: value(data, "notes"),
           source: value(data, "source"),
           // Not on this form — owner moves through the pipeline panel's buttons. Passed through
@@ -141,6 +143,8 @@ export function ClientDetailView({
           name: client.name,
           industry: client.industry,
           location: client.location,
+          website: client.website,
+          whatTheyDo: client.whatTheyDo,
           notes: client.notes,
           source: client.source,
           owner: nextOwner,
@@ -454,6 +458,22 @@ export function ClientDetailView({
               />
             </label>
             <label className={styles.field}>
+              <span className={styles.label}>Website</span>
+              {/* Deliberately NOT type="url": that demands a scheme and would reject the
+                  "looped-in.com.au" people actually type. The API prepends https:// and then
+                  judges the result — the same division of labour as the contact email field,
+                  where the browser's stricter rule would block edits the server would accept. */}
+              <input
+                className={styles.input}
+                name="website"
+                type="text"
+                inputMode="url"
+                defaultValue={client.website ?? ""}
+                maxLength={500}
+                placeholder="looped-in.com.au"
+              />
+            </label>
+            <label className={styles.field}>
               <span className={styles.label}>Source</span>
               <input
                 className={styles.input}
@@ -461,6 +481,15 @@ export function ClientDetailView({
                 defaultValue={client.source ?? ""}
                 maxLength={100}
                 placeholder="referral, outbound, event…"
+              />
+            </label>
+            <label className={`${styles.field} ${styles.wide}`}>
+              <span className={styles.label}>What they do</span>
+              <textarea
+                className={styles.textarea}
+                name="whatTheyDo"
+                defaultValue={client.whatTheyDo ?? ""}
+                maxLength={2000}
               />
             </label>
             <label className={`${styles.field} ${styles.wide}`}>
@@ -497,7 +526,34 @@ export function ClientDetailView({
           <div className={styles.formGrid}>
             <Detail label="Industry" text={client.industry} />
             <Detail label="Location" text={client.location} />
+            <div className={styles.field}>
+              <span className={styles.label}>Website</span>
+              <span>
+                {client.website ? (
+                  // Safe in an href without escaping here because the API only ever stores an
+                  // absolute http(s) URL — see ClientDetail.website. `noreferrer` as well as
+                  // `noopener`: the referrer would otherwise tell the destination which client
+                  // page someone was reading.
+                  <a
+                    className={styles.externalLink}
+                    href={client.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {client.website}
+                  </a>
+                ) : (
+                  <span className={styles.count}>Not recorded</span>
+                )}
+              </span>
+            </div>
           </div>
+          {client.whatTheyDo ? (
+            <div className={styles.field}>
+              <span className={styles.label}>What they do</span>
+              <p className={styles.contactNote}>{client.whatTheyDo}</p>
+            </div>
+          ) : null}
           {client.notes ? (
             <div className={styles.field}>
               <span className={styles.label}>Notes</span>

@@ -415,6 +415,20 @@
   color: color-mix(in srgb, var(--foreground) 58%, transparent);
 }
 
+/* A client's website. --font-geist-mono is the code face here (connector URLs, claim names) while
+   Space Mono carries eyebrows and counts, so a machine address gets the former; the underline is
+   .nameLink's, because this is the one link on the page that leaves the app. */
+.externalLink {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.83rem;
+  word-break: break-all;
+  border-bottom: 1px solid color-mix(in srgb, var(--li-rule) 45%, transparent);
+}
+
+.externalLink:hover {
+  border-bottom-color: var(--li-rule);
+}
+
 /* The status-transition audit, kept deliberately quiet — same voice as .provenance. */
 .history {
   display: flex;

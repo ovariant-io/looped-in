@@ -4,7 +4,14 @@ namespace LoopedIn.Api.Models;
 
 /// <summary>The normalized, storable form of a client's mutable fields.</summary>
 public sealed record ClientFields(
-    string Name, string? Industry, string? Location, string? Notes, string? Source, string? Owner);
+    string Name,
+    string? Industry,
+    string? Location,
+    string? Website,
+    string? WhatTheyDo,
+    string? Notes,
+    string? Source,
+    string? Owner);
 
 /// <summary>The normalized, storable form of a contact's mutable fields.</summary>
 public sealed record ContactFields(string? FullName, string? Email, string? RoleTitle, string? Notes);
@@ -22,10 +29,10 @@ public sealed record InteractionFields(
 /// <remarks>
 /// <para>
 /// The limits here <b>mirror the CHECK constraints</b> in
-/// <c>Migrations/0001_clients_contacts.sql</c> and <c>0002_acquisition_lifecycle.sql</c>. That
-/// duplication is the point: without it a too-long name reaches Postgres, violates a check, and
-/// surfaces as a 503 (or worse, a 500) instead of the 400 it is. If a constraint changes,
-/// change both.
+/// <c>Migrations/0001_clients_contacts.sql</c>, <c>0002_acquisition_lifecycle.sql</c> and
+/// <c>0003_client_profile.sql</c>. That duplication is the point: without it a too-long name
+/// reaches Postgres, violates a check, and surfaces as a 503 (or worse, a 500) instead of the 400
+/// it is. If a constraint changes, change both.
 /// </para>
 /// <para>
 /// Pure argument-in/result-out, with no <c>HttpContext</c> and no database in sight, so it is
@@ -37,6 +44,8 @@ public static class ClientValidation
     public const int MaxNameLength = 200;
     public const int MaxIndustryLength = 100;
     public const int MaxLocationLength = 100;
+    public const int MaxWebsiteLength = 500;
+    public const int MaxWhatTheyDoLength = 2000;
     public const int MaxNotesLength = 4000;
     public const int MaxFullNameLength = 200;
     public const int MaxEmailLength = 320;
@@ -70,21 +79,25 @@ public static class ClientValidation
         [NotNullWhen(true)] out ClientFields? fields,
         [NotNullWhen(false)] out string? error) =>
         TryReadClient(
-            request?.Name, request?.Industry, request?.Location, request?.Notes,
-            request?.Source, request?.Owner, out fields, out error);
+            request?.Name, request?.Industry, request?.Location, request?.Website,
+            request?.WhatTheyDo, request?.Notes, request?.Source, request?.Owner,
+            out fields, out error);
 
     public static bool TryReadClient(
         UpdateClientRequest? request,
         [NotNullWhen(true)] out ClientFields? fields,
         [NotNullWhen(false)] out string? error) =>
         TryReadClient(
-            request?.Name, request?.Industry, request?.Location, request?.Notes,
-            request?.Source, request?.Owner, out fields, out error);
+            request?.Name, request?.Industry, request?.Location, request?.Website,
+            request?.WhatTheyDo, request?.Notes, request?.Source, request?.Owner,
+            out fields, out error);
 
     private static bool TryReadClient(
         string? name,
         string? industry,
         string? location,
+        string? website,
+        string? whatTheyDo,
         string? notes,
         string? source,
         string? owner,
@@ -104,6 +117,7 @@ public static class ClientValidation
         if (!Fits(trimmedName, MaxNameLength, "name", out error)
             || !Fits(Clean(industry), MaxIndustryLength, "industry", out error)
             || !Fits(Clean(location), MaxLocationLength, "location", out error)
+            || !Fits(Clean(whatTheyDo), MaxWhatTheyDoLength, "\"what they do\"", out error)
             || !Fits(Clean(notes), MaxNotesLength, "notes", out error)
             || !Fits(Clean(source), MaxSourceLength, "source", out error)
             || !Fits(Clean(owner), MaxOwnerLength, "owner", out error))
@@ -111,9 +125,105 @@ public static class ClientValidation
             return false;
         }
 
+        // Last, because it is the one field that rewrites its input — see TryReadWebsite. Its
+        // own length check runs against the NORMALIZED value, which is what reaches the column.
+        if (!TryReadWebsite(website, out var normalizedWebsite, out error))
+        {
+            return false;
+        }
+
         fields = new ClientFields(
-            trimmedName, Clean(industry), Clean(location), Clean(notes), Clean(source), Clean(owner));
+            trimmedName,
+            Clean(industry),
+            Clean(location),
+            normalizedWebsite,
+            Clean(whatTheyDo),
+            Clean(notes),
+            Clean(source),
+            Clean(owner));
         error = null;
+        return true;
+    }
+
+    /// <summary>
+    /// Normalizes a website to an absolute <c>http(s)</c> URL, or explains why it is not one.
+    /// Absent stays absent: <paramref name="website"/> is null for a blank value and that is a
+    /// success, not a failure.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The only field here that rewrites its input.</b> People type and paste
+    /// <c>looped-in.com.au</c>, not <c>https://looped-in.com.au</c>, and a scheme-less string in an
+    /// <c>href</c> is a <em>relative path</em> — the link would navigate to <c>/clients/looped-in.com.au</c>
+    /// rather than off-site. Prepending the scheme at the boundary means one canonical stored form,
+    /// so nothing downstream has to guess.
+    /// </para>
+    /// <para>
+    /// <b>The scheme allow-list is a security control, not tidiness.</b> The detail page renders
+    /// the stored value straight into an anchor, so <c>javascript:</c> and <c>data:</c> URLs have to
+    /// be refused here — at the one boundary every write passes through — rather than filtered at
+    /// each render site, where the next new render site forgets. Both shapes fail below: neither
+    /// carries <c>://</c>, so each is prefixed and then fails to parse as an http(s) URL with a
+    /// dotted host.
+    /// </para>
+    /// <para>
+    /// Deliberately looser than a URL validator: no reachability check, no TLD list, no
+    /// lowercasing or trailing-slash normalization. A stored value should still read as the thing
+    /// the user typed. Unlike <see cref="IsPlausibleEmail"/> this has no importer to stay
+    /// equivalent to — <c>scripts/import_clients.py</c> never writes this column, so there is no
+    /// seeded value a strict rule here could make uneditable.
+    /// </para>
+    /// </remarks>
+    public static bool TryReadWebsite(
+        string? value,
+        out string? website,
+        [NotNullWhen(false)] out string? error)
+    {
+        website = null;
+        error = null;
+
+        var trimmed = Clean(value);
+        if (trimmed is null)
+        {
+            return true;
+        }
+
+        // Interior whitespace is a typo, not an address. (A legitimate space is already %20.)
+        if (trimmed.Any(char.IsWhiteSpace))
+        {
+            error = $"\"{trimmed}\" doesn't look like a web address — it contains a space.";
+            return false;
+        }
+
+        var candidate = trimmed.Contains("://", StringComparison.Ordinal)
+            ? trimmed
+            : $"https://{trimmed}";
+
+        // Against the normalized value: the prefix is stored, so it is the prefix that has to fit
+        // the column. Checked before the parse so an absurd input fails with the useful message.
+        if (!Fits(candidate, MaxWebsiteLength, "website", out error))
+        {
+            return false;
+        }
+
+        // Userinfo is refused for two reasons at once. It is how `mailto:someone@example.com`
+        // sneaks through — the `@` makes `mailto:someone` a username rather than a bad port, so
+        // the address parses as a valid https URL for host example.com and an email would be
+        // silently stored as a website. And on a list every signed-in user can edit,
+        // `https://looped-in.com.au@evil.com` is a link that reads as the client's own domain and
+        // navigates somewhere else. No company homepage carries credentials; refusing costs
+        // nothing.
+        if (!Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps)
+            || uri.UserInfo.Length > 0
+            || !uri.Host.Contains('.', StringComparison.Ordinal))
+        {
+            error = $"\"{trimmed}\" doesn't look like a web address. "
+                + "Use something like looped-in.com.au or https://looped-in.com.au.";
+            return false;
+        }
+
+        website = candidate;
         return true;
     }
 
