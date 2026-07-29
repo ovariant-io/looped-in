@@ -30,7 +30,7 @@ const TOOLS = [
   },
   {
     name: "get_client",
-    what: "One client in full — contacts, website, notes, and the lifecycle detail the list omits.",
+    what: "One client in full — contacts, website, notes, and the lifecycle detail the list omits. Contacts come named, never with their email addresses.",
     ask: "What do we know about Acme?",
   },
   {
@@ -65,7 +65,7 @@ const TOOLS = [
   },
   {
     name: "add_client_contact / update_client_contact",
-    what: "Adds or edits the people on a client — a contact needs at least a name or an email.",
+    what: "Adds or edits the people on a client — a contact needs at least a name or an email. Addresses can be written but are never read back.",
     ask: "Add Jo Chen, jo@acme.example, as Acme's procurement lead.",
   },
   {
@@ -146,6 +146,14 @@ export function ClientGuide({ connectorLink }: { connectorLink: ReactNode }) {
           rather than overwritten, and deletes (also available) ask you first.
           Every tool added to the server shows up in your assistant
           automatically, no reconnecting.
+        </p>
+        <p className={styles.hint}>
+          <strong>Contact email addresses are never sent to the assistant.</strong>{" "}
+          It sees each contact&apos;s name and whether an address is on file, but
+          not the address itself — enough to draft to the right person and pick a
+          recipient, without your contacts&apos; details ending up in a chat
+          transcript. The addresses stay here in the app, which is where sending
+          happens anyway.
         </p>
       </section>
 

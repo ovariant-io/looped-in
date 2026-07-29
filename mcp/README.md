@@ -26,7 +26,8 @@ the API surface under `/clients`. The list is shared team data, so these answer
   record `get_client` would return plus the client's latest interaction, so a
   task spanning the whole list (campaign drafting, recency checks) is one call
   instead of one per client; `get_client` — one client in full, including
-  contacts and the prose and lifecycle fields the summaries omit;
+  contacts (named, never addressed — see the read policy below) and the prose
+  and lifecycle fields the summaries omit;
   `get_client_status_history` — the append-only transition audit trail;
   `list_client_interactions` — the per-client outreach log.
 - **Writers:** `create_client` / `update_client` / `delete_client`,
@@ -43,7 +44,7 @@ the tools record the outcome:
 - **Readers:** `list_campaigns` — paged summaries carrying per-state message
   counts (a campaign has no status of its own); `get_campaign` — the brief,
   every drafted message with full bodies, and the `contactOptions` a recipient
-  can be chosen from.
+  can be chosen from (by `id`; options carry `hasEmail`, not addresses).
 - **Writers:** `create_campaign` / `update_campaign` / `delete_campaign`, and
   `add_campaign_message` / `update_campaign_message` /
   `delete_campaign_message` (one draft per client per campaign — a 409 means
@@ -60,6 +61,20 @@ they re-read the row, keep every unmentioned field, and null out only fields
 named in `clear`. Deletes are real deletes; their schemas say so
 (`destructiveHint`) and their docstrings direct the agent to confirm with the
 user first. An unauthenticated `GET /health` rounds things out.
+
+The read policy is one rule: **contact email addresses never leave this
+server.** The list names ~150 real people, and a tool result lands in an LLM's
+context and then in whatever the client logs or caches — a disclosure no later
+delete undoes. So `tools/redaction.py` drops `email` from every contact and
+campaign recipient option on the way out and puts `hasEmail` in its place,
+keeping the one decision-relevant bit without the identifying value. Nothing an
+agent does needs the address: recipients are chosen by `contact_id`,
+personalization draws on names and the outreach log, and sending happens in the
+app. Addresses may still be *written* (`add_client_contact`), and an omitted
+`email` on an update is preserved unseen — the redaction sits at the tool's
+return, deliberately not in `backend.py`, because the merge tools re-read a row
+and re-send it, so a redacted read would PATCH `hasEmail` over a real address.
+The screens are unaffected; this narrows the agent surface only.
 
 Adding a domain is a new module under `looped_in_mcp/tools/` and one line in
 `registry.py`; tools stay thin (validate input → call `deps.api` → shape the

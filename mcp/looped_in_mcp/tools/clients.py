@@ -23,6 +23,12 @@ The write policy, decided on purpose rather than inherited from the API:
   schemas (`destructiveHint`) and their docstrings tell the agent to confirm
   with the user first — the API cannot enforce that; the tool contract is
   where an agent policy lives.
+
+The read policy is one rule: **contact email addresses do not leave this
+server.** Every result carrying a contact goes through `redaction.py`, which
+swaps the address for a `hasEmail` flag — see that module for why it sits at the
+tool's return and not in the API client. The screens still show addresses; an
+agent has no use for one.
 """
 
 from __future__ import annotations
@@ -43,6 +49,12 @@ from looped_in_mcp.tools.common import (
     replacement_body,
     require_api,
     uuid_arg,
+)
+from looped_in_mcp.tools.redaction import (
+    redact_client,
+    redact_client_page,
+    redact_contact,
+    redact_wrapped_client,
 )
 
 # Mirrors ClientValidation.ClientStatuses in the API (itself mirroring the
@@ -188,10 +200,12 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         prefer `get_client`; for a full log, `list_client_interactions`.
         """
         api = require_api(deps)
-        return await api.get_json(
-            "/clients/details",
-            token=caller_token(),
-            params=_list_query(search, industry, status, limit, offset),
+        return redact_client_page(
+            await api.get_json(
+                "/clients/details",
+                token=caller_token(),
+                params=_list_query(search, industry, status, limit, offset),
+            )
         )
 
     @mcp.tool(annotations=READ_ONLY)
@@ -206,9 +220,12 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         directory, so compare against `whoami`'s `sub` to recognise the caller.
         `version` is the optimistic-concurrency token: read it here (contacts
         carry their own) and pass it as `expected_version` to the write tools.
+        Contacts carry `hasEmail`, not the address itself — reach a person by
+        naming their `id` as a campaign message's recipient, and leave the
+        addressing to the app.
         """
         api = require_api(deps)
-        return await api.get_json(_client_path(client_id), token=caller_token())
+        return redact_client(await api.get_json(_client_path(client_id), token=caller_token()))
 
     @mcp.tool(annotations=READ_ONLY)
     async def get_client_status_history(client_id: str) -> list:
@@ -271,7 +288,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "source": source,
             "owner": owner,
         }
-        return await api.post_json("/clients", token=caller_token(), json=body)
+        return redact_wrapped_client(
+            await api.post_json("/clients", token=caller_token(), json=body)
+        )
 
     @mcp.tool(annotations=OVERWRITE)
     async def update_client(
@@ -315,7 +334,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         }
         body = replacement_body(_CLIENT_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
-        return await api.patch_json(path, token=token, json=body)
+        # `current` above is the unredacted read the merge needs; only what the
+        # tool hands back is redacted. See redaction.py.
+        return redact_client(await api.patch_json(path, token=token, json=body))
 
     @mcp.tool(annotations=OVERWRITE)
     async def change_client_status(
@@ -342,7 +363,11 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "lostReason": lost_reason,
             "expectedVersion": expected_version,
         }
-        return await api.post_json(_client_path(client_id, "/status"), token=caller_token(), json=body)
+        return redact_client(
+            await api.post_json(
+                _client_path(client_id, "/status"), token=caller_token(), json=body
+            )
+        )
 
     @mcp.tool(annotations=REMOVAL)
     async def delete_client(client_id: str) -> dict:
@@ -373,8 +398,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
 
         `email` must look like one — the API refuses implausible values (put
         the original text in `notes` instead), and a 409 means this client
-        already has a contact with that email. Returns the created contact,
-        whose `version` is what later edits pass as `expected_version`.
+        already has a contact with that email. An address may be written here
+        but is never read back: the returned contact reports `hasEmail`, not the
+        value. Its `version` is what later edits pass as `expected_version`.
         """
         api = require_api(deps)
         body = {
@@ -383,7 +409,11 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "roleTitle": role_title,
             "notes": notes,
         }
-        return await api.post_json(_client_path(client_id, "/contacts"), token=caller_token(), json=body)
+        return redact_contact(
+            await api.post_json(
+                _client_path(client_id, "/contacts"), token=caller_token(), json=body
+            )
+        )
 
     @mcp.tool(annotations=OVERWRITE)
     async def update_client_contact(
@@ -400,10 +430,14 @@ def register(mcp: FastMCP, deps: Deps) -> None:
 
         Contacts ride on the client detail: find the contact and its `version`
         via `get_client`, and pass that `version` as `expected_version`.
-        Omitted fields keep their stored value; `clear` empties fields — though
-        a contact must keep a name or an email, and clearing both is refused.
-        A 409 is either a concurrent edit (re-read) or another contact on this
-        client already holding the new email. Returns the updated contact.
+        Omitted fields keep their stored value — including the email address,
+        which is preserved unseen, so editing a role or notes never disturbs it.
+        `clear` empties fields, though a contact must keep a name or an email
+        and clearing both is refused; naming `email` in `clear` deletes an
+        address you cannot read, so confirm with the user first. A 409 is either
+        a concurrent edit (re-read) or another contact on this client already
+        holding the new email. Returns the updated contact, reporting `hasEmail`
+        rather than the address.
         """
         api = require_api(deps)
         token = caller_token()
@@ -421,10 +455,16 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "role_title": role_title,
             "notes": notes,
         }
+        # `current` is the unredacted contact, which is the whole point: the
+        # merge re-sends the stored address for a caller who did not mention it.
+        # Redacting the read instead would PATCH "hasEmail" over it. See
+        # redaction.py.
         body = replacement_body(_CONTACT_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
-        return await api.patch_json(
-            _client_path(client_id, f"/contacts/{canonical}"), token=token, json=body
+        return redact_contact(
+            await api.patch_json(
+                _client_path(client_id, f"/contacts/{canonical}"), token=token, json=body
+            )
         )
 
     @mcp.tool(annotations=REMOVAL)

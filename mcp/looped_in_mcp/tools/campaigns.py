@@ -6,7 +6,10 @@ email. Drafting is the agent's job (personalize from what `get_client` and
 and the tools record the outcome. These map 1:1 onto the API surface under
 `/campaigns` and forward the caller's Clerk token, like `clients.py` — whose
 write policy (merge-style updates, `expected_version` from a fresh read,
-destructive tools that confirm with the user) applies here unchanged.
+destructive tools that confirm with the user) applies here unchanged. So does
+its read policy: a campaign's `contactOptions` name recipients without their
+email addresses, since a message addresses a person by `contact_id` and the
+sending happens in the app.
 """
 
 from __future__ import annotations
@@ -27,6 +30,7 @@ from looped_in_mcp.tools.common import (
     require_api,
     uuid_arg,
 )
+from looped_in_mcp.tools.redaction import redact_campaign
 
 # Mirrors CampaignValidation.CampaignMessageStates in the API (itself mirroring
 # the campaign_messages_state_allowed CHECK), with CAMPAIGN_MESSAGE_STATES in
@@ -100,10 +104,14 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         `version` its write tools need as `expected_version`; the campaign's
         own `version` guards `update_campaign`. `contactOptions` lists the
         contacts of every client already in the campaign — the valid
-        `contact_id` choices when setting a message's recipient.
+        `contact_id` choices when setting a message's recipient. Options name
+        people, never their addresses (`hasEmail` reports whether one is on
+        file); pick by `id` and let the app do the addressing.
         """
         api = require_api(deps)
-        return await api.get_json(_campaign_path(campaign_id), token=caller_token())
+        return redact_campaign(
+            await api.get_json(_campaign_path(campaign_id), token=caller_token())
+        )
 
     @mcp.tool(annotations=ADDITIVE)
     async def create_campaign(name: str, brief: str | None = None) -> dict:
@@ -117,7 +125,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         """
         api = require_api(deps)
         body = {"name": name, "brief": brief}
-        return await api.post_json("/campaigns", token=caller_token(), json=body)
+        return redact_campaign(
+            await api.post_json("/campaigns", token=caller_token(), json=body)
+        )
 
     @mcp.tool(annotations=OVERWRITE)
     async def update_campaign(
@@ -143,7 +153,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         provided: dict[str, object] = {"name": name, "brief": brief}
         body = replacement_body(_CAMPAIGN_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
-        return await api.patch_json(path, token=token, json=body)
+        return redact_campaign(await api.patch_json(path, token=token, json=body))
 
     @mcp.tool(annotations=REMOVAL)
     async def delete_campaign(campaign_id: str) -> dict:
