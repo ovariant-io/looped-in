@@ -22,15 +22,35 @@ the API surface under `/clients`. The list is shared team data, so these answer
 - **Readers:** `list_clients` — paged summaries with `search` / `industry` /
   `status` filters (`status` is a closed set in the tool schema, so a bad value
   is refused rather than silently unfiltered as the API's `?status=` would be);
-  `get_client` — one client in full, including contacts and the prose and
-  lifecycle fields the summaries omit; `get_client_status_history` — the
-  append-only transition audit trail; `list_client_interactions` — the
-  per-client outreach log.
+  `list_client_details` — the bulk read: the same page in full, each row the
+  record `get_client` would return plus the client's latest interaction, so a
+  task spanning the whole list (campaign drafting, recency checks) is one call
+  instead of one per client; `get_client` — one client in full, including
+  contacts (named, never addressed — see the read policy below) and the prose
+  and lifecycle fields the summaries omit;
+  `get_client_status_history` — the append-only transition audit trail;
+  `list_client_interactions` — the per-client outreach log.
 - **Writers:** `create_client` / `update_client` / `delete_client`,
   `change_client_status` (the only writer of status — a transition is an
   event), `add_client_contact` / `update_client_contact` /
   `delete_client_contact`, and `add_client_interaction` /
   `update_client_interaction` / `delete_client_interaction`.
+
+— plus **EDM campaign tools** (`tools/campaigns.py`), mapping 1:1 onto
+`/campaigns`: a campaign is a drafting brief plus one message per client, and
+nothing here sends email — drafting is the agent's job, sending is the human's,
+the tools record the outcome:
+
+- **Readers:** `list_campaigns` — paged summaries carrying per-state message
+  counts (a campaign has no status of its own); `get_campaign` — the brief,
+  every drafted message with full bodies, and the `contactOptions` a recipient
+  can be chosen from (by `id`; options carry `hasEmail`, not addresses).
+- **Writers:** `create_campaign` / `update_campaign` / `delete_campaign`, and
+  `add_campaign_message` / `update_campaign_message` /
+  `delete_campaign_message` (one draft per client per campaign — a 409 means
+  edit the existing one), plus `set_campaign_message_state` (the only writer of
+  state — entering `sent` stamps `sentAt` and appends an `email` interaction to
+  the client's outreach log, so agents must not also log the touch by hand).
 
 The write policy is deliberate, not inherited from the API. Every update
 requires `expected_version` from a fresh read, so a concurrent edit surfaces as
@@ -41,6 +61,20 @@ they re-read the row, keep every unmentioned field, and null out only fields
 named in `clear`. Deletes are real deletes; their schemas say so
 (`destructiveHint`) and their docstrings direct the agent to confirm with the
 user first. An unauthenticated `GET /health` rounds things out.
+
+The read policy is one rule: **contact email addresses never leave this
+server.** The list names ~150 real people, and a tool result lands in an LLM's
+context and then in whatever the client logs or caches — a disclosure no later
+delete undoes. So `tools/redaction.py` drops `email` from every contact and
+campaign recipient option on the way out and puts `hasEmail` in its place,
+keeping the one decision-relevant bit without the identifying value. Nothing an
+agent does needs the address: recipients are chosen by `contact_id`,
+personalization draws on names and the outreach log, and sending happens in the
+app. Addresses may still be *written* (`add_client_contact`), and an omitted
+`email` on an update is preserved unseen — the redaction sits at the tool's
+return, deliberately not in `backend.py`, because the merge tools re-read a row
+and re-send it, so a redacted read would PATCH `hasEmail` over a real address.
+The screens are unaffected; this narrows the agent surface only.
 
 Adding a domain is a new module under `looped_in_mcp/tools/` and one line in
 `registry.py`; tools stay thin (validate input → call `deps.api` → shape the
@@ -240,7 +274,7 @@ API), and **tools** (one module per domain).
 | `looped_in_mcp/backend.py` | `LoopedInApiClient` — the **single seam** to the .NET API (token forwarding, RFC 7807 error mapping). |
 | `looped_in_mcp/deps.py` | `Deps` — shared resources (the API client) handed to each tool module. |
 | `looped_in_mcp/app.py` | `create_app()` — assembles auth + deps + tools + middleware into the ASGI app. |
-| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the annotation vocabularies (`READ_ONLY`, `ADDITIVE`, `OVERWRITE`, `REMOVAL`). `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the client-pipeline CRUD tools. |
+| `looped_in_mcp/tools/` | One module per tool domain; `registry.py` lists them, `common.py` holds the shared token/client helpers plus the annotation vocabularies (`READ_ONLY`, `ADDITIVE`, `OVERWRITE`, `REMOVAL`). `identity.py` → `whoami` + `my_api_identity`; `clients.py` → the client-pipeline CRUD tools; `campaigns.py` → the EDM campaign-drafting tools. |
 | `requirements.txt` | Local dev ranges: `fastmcp` (3.x), `pydantic`, `httpx`, `python-dotenv`, `mangum` (Lambda), `uvicorn` (local). |
 | `requirements-lambda.lock` | Hash-locked, platform-pinned install used by the deploy. |
 | `Dockerfile` | `python:3.13-slim`, non-root, used by the `mcp` Compose profile. |

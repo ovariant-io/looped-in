@@ -30,8 +30,13 @@ const TOOLS = [
   },
   {
     name: "get_client",
-    what: "One client in full — contacts, website, notes, and the lifecycle detail the list omits.",
+    what: "One client in full — contacts, website, notes, and the lifecycle detail the list omits. Contacts come named, never with their email addresses.",
     ask: "What do we know about Acme?",
+  },
+  {
+    name: "list_client_details",
+    what: "The bulk read — a page of clients in full, each with contacts and its latest logged touch, in one call.",
+    ask: "Draft personalized outreach for every lead we haven't touched lately.",
   },
   {
     name: "get_client_status_history",
@@ -60,8 +65,23 @@ const TOOLS = [
   },
   {
     name: "add_client_contact / update_client_contact",
-    what: "Adds or edits the people on a client — a contact needs at least a name or an email.",
+    what: "Adds or edits the people on a client — a contact needs at least a name or an email. Addresses can be written but are never read back.",
     ask: "Add Jo Chen, jo@acme.example, as Acme's procurement lead.",
+  },
+  {
+    name: "list_campaigns / get_campaign",
+    what: "The EDM campaigns and their per-client drafts, with per-state counts as each campaign's progress.",
+    ask: "How is the July re-engagement campaign going?",
+  },
+  {
+    name: "add_campaign_message / update_campaign_message",
+    what: "Drafts one personalized email per client into a campaign — one draft per client, revised in place.",
+    ask: "Draft a re-engagement email for every client in discussion.",
+  },
+  {
+    name: "set_campaign_message_state",
+    what: "Records a draft's outcome — approved, skipped, or sent, which also logs the touch on the client.",
+    ask: "Mark Acme's campaign email as sent.",
   },
   {
     name: "whoami",
@@ -126,6 +146,14 @@ export function ClientGuide({ connectorLink }: { connectorLink: ReactNode }) {
           rather than overwritten, and deletes (also available) ask you first.
           Every tool added to the server shows up in your assistant
           automatically, no reconnecting.
+        </p>
+        <p className={styles.hint}>
+          <strong>Contact email addresses are never sent to the assistant.</strong>{" "}
+          It sees each contact&apos;s name and whether an address is on file, but
+          not the address itself — enough to draft to the right person and pick a
+          recipient, without your contacts&apos; details ending up in a chat
+          transcript. The addresses stay here in the app, which is where sending
+          happens anyway.
         </p>
       </section>
 

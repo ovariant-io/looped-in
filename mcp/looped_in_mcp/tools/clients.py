@@ -23,11 +23,16 @@ The write policy, decided on purpose rather than inherited from the API:
   schemas (`destructiveHint`) and their docstrings tell the agent to confirm
   with the user first — the API cannot enforce that; the tool contract is
   where an agent policy lives.
+
+The read policy is one rule: **contact email addresses do not leave this
+server.** Every result carrying a contact goes through `redaction.py`, which
+swaps the address for a `hasEmail` flag — see that module for why it sits at the
+tool's return and not in the API client. The screens still show addresses; an
+agent has no use for one.
 """
 
 from __future__ import annotations
 
-import uuid
 from datetime import date
 from typing import Literal
 
@@ -41,7 +46,15 @@ from looped_in_mcp.tools.common import (
     READ_ONLY,
     REMOVAL,
     caller_token,
+    replacement_body,
     require_api,
+    uuid_arg,
+)
+from looped_in_mcp.tools.redaction import (
+    redact_client,
+    redact_client_page,
+    redact_contact,
+    redact_wrapped_client,
 )
 
 # Mirrors ClientValidation.ClientStatuses in the API (itself mirroring the
@@ -105,59 +118,35 @@ _INTERACTION_FIELDS = [
 ]
 
 
-def _uuid(value: str, noun: str) -> str:
-    """`value` as a canonical UUID string, or a clear ToolError naming `noun`.
-
-    The API's routes constrain `{id:guid}`, so a malformed id never reaches a
-    handler — it comes back as a bare routing 404, indistinguishable from a
-    missing row. Refusing it here keeps the API's 404 meaning exactly one
-    thing, and the canonical form is what goes on the wire.
-    """
-    try:
-        return str(uuid.UUID(value))
-    except ValueError:
-        raise ToolError(f'"{value}" is not a valid {noun} — expected a UUID.') from None
-
-
 def _client_path(client_id: str, suffix: str = "") -> str:
     """`/clients/{id}{suffix}` with the id validated as a UUID first."""
-    return f"/clients/{_uuid(client_id, 'client id')}{suffix}"
+    return f"/clients/{uuid_arg(client_id, 'client id')}{suffix}"
 
 
-def _wire_value(value: object) -> object:
-    """A tool-parameter value as the API expects it on the wire (dates → ISO)."""
-    return value.isoformat() if isinstance(value, date) else value
+def _list_query(
+    search: str | None,
+    industry: str | None,
+    status: str | None,
+    limit: int | None,
+    offset: int | None,
+) -> dict[str, str | int]:
+    """The query params `list_clients` and `list_client_details` share.
 
-
-def _replacement_body(
-    fields: list[tuple[str, str]],
-    provided: dict[str, object],
-    current: dict,
-    clear: list[str] | None,
-) -> dict:
-    """The full-replacement PATCH body for one merge-style update.
-
-    Provided values win, fields named in `clear` go null, and everything else
-    re-sends what is stored now — which is what turns the API's replace-all
-    PATCH into the merge the tool promises. Preserved values come from the row
-    as the API just returned it, so they are already wire-shaped; only caller
-    input needs converting.
+    Only supplied values go on the wire — the API's defaults (and its clamping)
+    stay the single authority on what an absent filter or page bound means.
     """
-    cleared = set(clear or [])
-    body: dict[str, object] = {}
-    for param, wire in fields:
-        value = provided[param]
-        if param in cleared:
-            if value is not None:
-                raise ToolError(
-                    f'"{param}" is both given a value and named in clear — pick one.'
-                )
-            body[wire] = None
-        elif value is not None:
-            body[wire] = _wire_value(value)
-        else:
-            body[wire] = current.get(wire)
-    return body
+    params: dict[str, str | int] = {}
+    if search is not None:
+        params["search"] = search
+    if industry is not None:
+        params["industry"] = industry
+    if status is not None:
+        params["status"] = status
+    if limit is not None:
+        params["limit"] = limit
+    if offset is not None:
+        params["offset"] = offset
+    return params
 
 
 def register(mcp: FastMCP, deps: Deps) -> None:
@@ -180,37 +169,63 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         `total` (matches before paging), `limit` (default 50, max 200 — an
         out-of-range request is clamped, and the response reports the limit
         actually applied) and `offset` — page until `offset + limit >= total`.
-        Summaries omit the prose fields; use `get_client` for the full record.
+        Summaries omit the prose fields; `get_client` has the full record for
+        one client, `list_client_details` for a whole page of them.
         """
-        params: dict[str, str | int] = {}
-        if search is not None:
-            params["search"] = search
-        if industry is not None:
-            params["industry"] = industry
-        if status is not None:
-            params["status"] = status
-        if limit is not None:
-            params["limit"] = limit
-        if offset is not None:
-            params["offset"] = offset
         api = require_api(deps)
-        return await api.get_json("/clients", token=caller_token(), params=params)
+        return await api.get_json(
+            "/clients",
+            token=caller_token(),
+            params=_list_query(search, industry, status, limit, offset),
+        )
+
+    @mcp.tool(annotations=READ_ONLY)
+    async def list_client_details(
+        search: str | None = None,
+        industry: str | None = None,
+        status: ClientStatus | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict:
+        """The bulk read: a page of clients in full, each with its latest touch.
+
+        One call here replaces a `get_client` (and a recency-checking
+        `list_client_interactions`) per client — reach for it whenever a task
+        spans many clients: drafting a campaign, auditing notes, finding stale
+        relationships. Filters and paging are exactly `list_clients`'s. Each
+        entry in `clients` carries `client` — the full record `get_client`
+        would return, contacts included — and `lastInteraction`, the newest
+        entry of the outreach log (`kind`, `occurredOn`, `summary`,
+        `followUpOn`) or null when nothing is logged. For a single client
+        prefer `get_client`; for a full log, `list_client_interactions`.
+        """
+        api = require_api(deps)
+        return redact_client_page(
+            await api.get_json(
+                "/clients/details",
+                token=caller_token(),
+                params=_list_query(search, industry, status, limit, offset),
+            )
+        )
 
     @mcp.tool(annotations=READ_ONLY)
     async def get_client(client_id: str) -> dict:
         """One client in full, including its contacts.
 
-        The only reader that returns the prose fields (`website`, `whatTheyDo`,
-        `notes`) and the lifecycle detail (`acquiredAt`, `source`, `owner`,
-        `lostReason` — set only when status is `lost`); `status` itself is
-        already on every `list_clients` summary. `owner`,
+        Returns the prose fields (`website`, `whatTheyDo`, `notes`) and the
+        lifecycle detail (`acquiredAt`, `source`, `owner`, `lostReason` — set
+        only when status is `lost`) that `list_clients` summaries omit;
+        `list_client_details` returns this same record in bulk. `owner`,
         `createdBy` and `updatedBy` are raw Clerk user ids — there is no user
         directory, so compare against `whoami`'s `sub` to recognise the caller.
         `version` is the optimistic-concurrency token: read it here (contacts
         carry their own) and pass it as `expected_version` to the write tools.
+        Contacts carry `hasEmail`, not the address itself — reach a person by
+        naming their `id` as a campaign message's recipient, and leave the
+        addressing to the app.
         """
         api = require_api(deps)
-        return await api.get_json(_client_path(client_id), token=caller_token())
+        return redact_client(await api.get_json(_client_path(client_id), token=caller_token()))
 
     @mcp.tool(annotations=READ_ONLY)
     async def get_client_status_history(client_id: str) -> list:
@@ -273,7 +288,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "source": source,
             "owner": owner,
         }
-        return await api.post_json("/clients", token=caller_token(), json=body)
+        return redact_wrapped_client(
+            await api.post_json("/clients", token=caller_token(), json=body)
+        )
 
     @mcp.tool(annotations=OVERWRITE)
     async def update_client(
@@ -315,9 +332,11 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "source": source,
             "owner": owner,
         }
-        body = _replacement_body(_CLIENT_FIELDS, provided, current, clear)
+        body = replacement_body(_CLIENT_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
-        return await api.patch_json(path, token=token, json=body)
+        # `current` above is the unredacted read the merge needs; only what the
+        # tool hands back is redacted. See redaction.py.
+        return redact_client(await api.patch_json(path, token=token, json=body))
 
     @mcp.tool(annotations=OVERWRITE)
     async def change_client_status(
@@ -344,21 +363,27 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "lostReason": lost_reason,
             "expectedVersion": expected_version,
         }
-        return await api.post_json(_client_path(client_id, "/status"), token=caller_token(), json=body)
+        return redact_client(
+            await api.post_json(
+                _client_path(client_id, "/status"), token=caller_token(), json=body
+            )
+        )
 
     @mcp.tool(annotations=REMOVAL)
     async def delete_client(client_id: str) -> dict:
         """Permanently delete a client and everything attached to it. No undo.
 
-        The cascade takes the client's contacts, its status history, and its
-        whole interaction log. A client the team is merely done pursuing should
+        The cascade takes the client's contacts, its status history, its whole
+        interaction log, and any campaign messages drafted for it (see the
+        campaign tools). A client the team is merely done pursuing should
         be *moved* (`lost` or `do_not_contact`) so the record survives — delete
         only rows that are themselves mistakes (duplicates, test entries).
         Confirm with the user before deleting anything real.
         """
         api = require_api(deps)
-        canonical = _uuid(client_id, "client id")
-        await api.delete(_client_path(canonical), token=caller_token())
+        # Canonicalized once, here — _client_path would just re-validate the same string.
+        canonical = uuid_arg(client_id, "client id")
+        await api.delete(f"/clients/{canonical}", token=caller_token())
         return {"deleted": canonical}
 
     @mcp.tool(annotations=ADDITIVE)
@@ -373,8 +398,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
 
         `email` must look like one — the API refuses implausible values (put
         the original text in `notes` instead), and a 409 means this client
-        already has a contact with that email. Returns the created contact,
-        whose `version` is what later edits pass as `expected_version`.
+        already has a contact with that email. An address may be written here
+        but is never read back: the returned contact reports `hasEmail`, not the
+        value. Its `version` is what later edits pass as `expected_version`.
         """
         api = require_api(deps)
         body = {
@@ -383,7 +409,11 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "roleTitle": role_title,
             "notes": notes,
         }
-        return await api.post_json(_client_path(client_id, "/contacts"), token=caller_token(), json=body)
+        return redact_contact(
+            await api.post_json(
+                _client_path(client_id, "/contacts"), token=caller_token(), json=body
+            )
+        )
 
     @mcp.tool(annotations=OVERWRITE)
     async def update_client_contact(
@@ -400,14 +430,18 @@ def register(mcp: FastMCP, deps: Deps) -> None:
 
         Contacts ride on the client detail: find the contact and its `version`
         via `get_client`, and pass that `version` as `expected_version`.
-        Omitted fields keep their stored value; `clear` empties fields — though
-        a contact must keep a name or an email, and clearing both is refused.
-        A 409 is either a concurrent edit (re-read) or another contact on this
-        client already holding the new email. Returns the updated contact.
+        Omitted fields keep their stored value — including the email address,
+        which is preserved unseen, so editing a role or notes never disturbs it.
+        `clear` empties fields, though a contact must keep a name or an email
+        and clearing both is refused; naming `email` in `clear` deletes an
+        address you cannot read, so confirm with the user first. A 409 is either
+        a concurrent edit (re-read) or another contact on this client already
+        holding the new email. Returns the updated contact, reporting `hasEmail`
+        rather than the address.
         """
         api = require_api(deps)
         token = caller_token()
-        canonical = _uuid(contact_id, "contact id")
+        canonical = uuid_arg(contact_id, "contact id")
         detail = await api.get_json(_client_path(client_id), token=token)
         current = next(
             (c for c in detail.get("contacts", []) if str(c.get("id")).lower() == canonical),
@@ -421,10 +455,16 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "role_title": role_title,
             "notes": notes,
         }
-        body = _replacement_body(_CONTACT_FIELDS, provided, current, clear)
+        # `current` is the unredacted contact, which is the whole point: the
+        # merge re-sends the stored address for a caller who did not mention it.
+        # Redacting the read instead would PATCH "hasEmail" over it. See
+        # redaction.py.
+        body = replacement_body(_CONTACT_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
-        return await api.patch_json(
-            _client_path(client_id, f"/contacts/{canonical}"), token=token, json=body
+        return redact_contact(
+            await api.patch_json(
+                _client_path(client_id, f"/contacts/{canonical}"), token=token, json=body
+            )
         )
 
     @mcp.tool(annotations=REMOVAL)
@@ -437,7 +477,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         real.
         """
         api = require_api(deps)
-        canonical = _uuid(contact_id, "contact id")
+        canonical = uuid_arg(contact_id, "contact id")
         await api.delete(_client_path(client_id, f"/contacts/{canonical}"), token=caller_token())
         return {"deleted": canonical}
 
@@ -466,7 +506,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "occurredOn": occurred_on.isoformat(),
             "summary": summary,
             "followUpOn": follow_up_on.isoformat() if follow_up_on else None,
-            "contactId": _uuid(contact_id, "contact id") if contact_id is not None else None,
+            "contactId": uuid_arg(contact_id, "contact id") if contact_id is not None else None,
         }
         return await api.post_json(
             _client_path(client_id, "/interactions"), token=caller_token(), json=body
@@ -495,7 +535,7 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         """
         api = require_api(deps)
         token = caller_token()
-        canonical = _uuid(interaction_id, "interaction id")
+        canonical = uuid_arg(interaction_id, "interaction id")
         interactions = await api.get_json(_client_path(client_id, "/interactions"), token=token)
         current = next(
             (i for i in interactions if str(i.get("id")).lower() == canonical),
@@ -508,9 +548,9 @@ def register(mcp: FastMCP, deps: Deps) -> None:
             "occurred_on": occurred_on,
             "summary": summary,
             "follow_up_on": follow_up_on,
-            "contact_id": _uuid(contact_id, "contact id") if contact_id is not None else None,
+            "contact_id": uuid_arg(contact_id, "contact id") if contact_id is not None else None,
         }
-        body = _replacement_body(_INTERACTION_FIELDS, provided, current, clear)
+        body = replacement_body(_INTERACTION_FIELDS, provided, current, clear)
         body["expectedVersion"] = expected_version
         return await api.patch_json(
             _client_path(client_id, f"/interactions/{canonical}"), token=token, json=body
@@ -525,6 +565,6 @@ def register(mcp: FastMCP, deps: Deps) -> None:
         Confirm with the user before deleting anything real.
         """
         api = require_api(deps)
-        canonical = _uuid(interaction_id, "interaction id")
+        canonical = uuid_arg(interaction_id, "interaction id")
         await api.delete(_client_path(client_id, f"/interactions/{canonical}"), token=caller_token())
         return {"deleted": canonical}

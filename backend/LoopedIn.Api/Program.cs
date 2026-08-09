@@ -188,4 +188,8 @@ app.MapDocumentEndpoints();
 // these rows belong to the team rather than to a user — see ClientEndpoints for what that costs.
 app.MapClientEndpoints();
 
+// EDM campaign drafting over the same Neon schema (GET/POST /campaigns, messages, …). Shares
+// the client routes' trust model; a message's move to `sent` also writes the client's log.
+app.MapCampaignEndpoints();
+
 app.Run();

@@ -41,6 +41,7 @@ public static class ClientEndpoints
             .AddEndpointFilter<DatabaseGateFilter>();
 
         clients.MapGet("/", ListAsync).WithName("ListClients");
+        clients.MapGet("/details", ListDetailsAsync).WithName("ListClientDetails");
         clients.MapPost("/", CreateAsync).WithName("CreateClient");
         clients.MapGet("/{id:guid}", GetAsync).WithName("GetClient");
         clients.MapPatch("/{id:guid}", UpdateAsync).WithName("UpdateClient");
@@ -77,6 +78,28 @@ public static class ClientEndpoints
         int? offset,
         CancellationToken cancellationToken) =>
         Results.Ok(await Store(services).ListAsync(
+            ClientValidation.SearchPattern(search),
+            ClientValidation.Clean(industry),
+            ClientValidation.StatusFilter(status),
+            ClientValidation.PageSize(limit),
+            ClientValidation.PageOffset(offset),
+            cancellationToken));
+
+    /// <summary>
+    /// The bulk read: the same page <see cref="ListAsync"/> would select, but with every row in
+    /// full — <c>GET /clients/{id}</c>'s shape, contacts included — plus each client's latest
+    /// interaction. One request replaces a per-client fan-out for callers (agents above all)
+    /// that personalize or recency-check across the whole list.
+    /// </summary>
+    private static async Task<IResult> ListDetailsAsync(
+        IServiceProvider services,
+        string? search,
+        string? industry,
+        string? status,
+        int? limit,
+        int? offset,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await Store(services).ListDetailsAsync(
             ClientValidation.SearchPattern(search),
             ClientValidation.Clean(industry),
             ClientValidation.StatusFilter(status),

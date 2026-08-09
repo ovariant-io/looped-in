@@ -31,9 +31,11 @@ public static class DatabaseServiceCollectionExtensions
         {
             services.AddSingleton(NpgsqlDataSource.Create(DbBootstrap.ToNpgsqlConnectionString(databaseUrl)));
 
-            // Registered only on this branch, so it is never resolvable when there is no database
-            // to talk to. Routes reach it through DatabaseGateFilter, which answers 503 first.
+            // Registered only on this branch, so they are never resolvable when there is no
+            // database to talk to. Routes reach them through DatabaseGateFilter, which answers
+            // 503 first.
             services.AddSingleton<ClientStore>();
+            services.AddSingleton<CampaignStore>();
         }
         catch (Exception ex)
         {

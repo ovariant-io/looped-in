@@ -83,6 +83,33 @@ public sealed record ClientListResponse(
     int Offset);
 
 /// <summary>
+/// A client's most recent outreach touch, trimmed to what a recency check needs. Rides on the
+/// bulk read only — the full log stays behind <c>GET /clients/{id}/interactions</c>.
+/// </summary>
+public sealed record LastInteraction(
+    string Kind,
+    DateOnly OccurredOn,
+    string Summary,
+    DateOnly? FollowUpOn);
+
+/// <summary>
+/// One row of the bulk read: the client exactly as <c>GET /clients/{id}</c> would return it
+/// (contacts included), plus its latest touch. Composed rather than flattened so a field added
+/// to <see cref="ClientDetail"/> can never be forgotten here.
+/// </summary>
+public sealed record ClientDetailRow(ClientDetail Client, LastInteraction? LastInteraction);
+
+/// <summary>
+/// A page of full client records — <c>GET /clients/details</c>. Same filters, paging and
+/// <paramref name="Total"/> semantics as <see cref="ClientListResponse"/>.
+/// </summary>
+public sealed record ClientDetailListResponse(
+    IReadOnlyList<ClientDetailRow> Clients,
+    int Total,
+    int Limit,
+    int Offset);
+
+/// <summary>
 /// The result of creating a client.
 /// </summary>
 /// <param name="Warning">

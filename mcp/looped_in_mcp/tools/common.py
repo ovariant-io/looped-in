@@ -10,6 +10,9 @@ import the behavior instead of re-copying it.
 
 from __future__ import annotations
 
+import uuid
+from datetime import date
+
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_access_token
 
@@ -54,3 +57,53 @@ def require_api(deps: Deps) -> LoopedInApiClient:
             "is unset), so API-backed tools are unavailable."
         )
     return deps.api
+
+
+def uuid_arg(value: str, noun: str) -> str:
+    """`value` as a canonical UUID string, or a clear ToolError naming `noun`.
+
+    The API's routes constrain `{id:guid}`, so a malformed id never reaches a
+    handler — it comes back as a bare routing 404, indistinguishable from a
+    missing row. Refusing it here keeps the API's 404 meaning exactly one
+    thing, and the canonical form is what goes on the wire.
+    """
+    try:
+        return str(uuid.UUID(value))
+    except ValueError:
+        raise ToolError(f'"{value}" is not a valid {noun} — expected a UUID.') from None
+
+
+def wire_value(value: object) -> object:
+    """A tool-parameter value as the API expects it on the wire (dates → ISO)."""
+    return value.isoformat() if isinstance(value, date) else value
+
+
+def replacement_body(
+    fields: list[tuple[str, str]],
+    provided: dict[str, object],
+    current: dict,
+    clear: list[str] | None,
+) -> dict:
+    """The full-replacement PATCH body for one merge-style update.
+
+    Provided values win, fields named in `clear` go null, and everything else
+    re-sends what is stored now — which is what turns the API's replace-all
+    PATCH into the merge the tool promises. Preserved values come from the row
+    as the API just returned it, so they are already wire-shaped; only caller
+    input needs converting.
+    """
+    cleared = set(clear or [])
+    body: dict[str, object] = {}
+    for param, wire in fields:
+        value = provided[param]
+        if param in cleared:
+            if value is not None:
+                raise ToolError(
+                    f'"{param}" is both given a value and named in clear — pick one.'
+                )
+            body[wire] = None
+        elif value is not None:
+            body[wire] = wire_value(value)
+        else:
+            body[wire] = current.get(wire)
+    return body

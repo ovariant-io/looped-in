@@ -165,6 +165,113 @@ public sealed class ClientStore
         return new ClientListResponse(clients, total, limit, offset);
     }
 
+    /// <summary>
+    /// One page of clients in full — every <see cref="ClientDetail"/> field, contacts, and the
+    /// latest interaction — under the same filters, ordering and paging as
+    /// <see cref="ListAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// This is the N+1 killer for callers that work across the whole list: an agent drafting a
+    /// campaign needs the prose fields, the contacts and a recency check for ~200 clients, and
+    /// reading them through <see cref="FindAsync"/> costs a round trip (and, over MCP, a
+    /// tool-approval) per row. Both statements ride one command, and the contacts statement
+    /// re-runs the page selection rather than taking ids as a parameter — the same
+    /// one-command shape as <see cref="FindAsync"/>, for the same reason.
+    /// </remarks>
+    public async Task<ClientDetailListResponse> ListDetailsAsync(
+        string? searchPattern,
+        string? industry,
+        string? status,
+        int limit,
+        int offset,
+        CancellationToken cancellationToken)
+    {
+        var rows = new List<ClientDetailRow>();
+        var contactsByClient = new Dictionary<Guid, List<ContactSummary>>();
+        var total = 0;
+
+        // The lateral's order matches ListInteractionsAsync, so "latest" here is the entry that
+        // log shows first. `client_id` rides after {ContactColumns} so ReadContact's ordinals
+        // hold; none of the lateral's four columns collide with a client column, so
+        // {ClientColumns} stays unqualified.
+        await using (var command = _dataSource.CreateCommand($"""
+            select {ClientColumns}, li.kind, li.occurred_on, li.summary, li.follow_up_on,
+                   count(*) over () as total_count
+            from clients c
+            left join lateral (
+                select kind, occurred_on, summary, follow_up_on
+                from interactions
+                where client_id = c.id
+                order by occurred_on desc, created_at desc, id desc
+                limit 1
+            ) li on true
+            where {ListFilter}
+            order by c.created_at desc, c.id desc
+            limit @limit offset @offset;
+
+            select {ContactColumns}, client_id
+            from contacts
+            where client_id in (
+                select c.id from clients c
+                where {ListFilter}
+                order by c.created_at desc, c.id desc
+                limit @limit offset @offset)
+            order by client_id, created_at, id;
+            """))
+        {
+            command.Parameters.Add(Text("pattern", searchPattern));
+            command.Parameters.Add(Text("industry", industry));
+            command.Parameters.Add(Text("status", status));
+            command.Parameters.Add(Int("limit", limit));
+            command.Parameters.Add(Int("offset", offset));
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                // interactions.kind is NOT NULL, so a null here means "no interaction joined".
+                var last = reader.IsDBNull(17)
+                    ? null
+                    : new LastInteraction(
+                        Kind: reader.GetString(17),
+                        OccurredOn: reader.GetFieldValue<DateOnly>(18),
+                        Summary: reader.GetString(19),
+                        FollowUpOn: NullableDate(reader, 20));
+
+                rows.Add(new ClientDetailRow(ReadClient(reader), last));
+                total = (int)reader.GetInt64(21);
+            }
+
+            await reader.NextResultAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                var clientId = reader.GetGuid(7);
+                if (!contactsByClient.TryGetValue(clientId, out var contacts))
+                {
+                    contactsByClient[clientId] = contacts = [];
+                }
+
+                contacts.Add(ReadContact(reader));
+            }
+        }
+
+        for (var i = 0; i < rows.Count; i++)
+        {
+            if (contactsByClient.TryGetValue(rows[i].Client.Id, out var contacts))
+            {
+                rows[i] = rows[i] with { Client = rows[i].Client with { Contacts = contacts } };
+            }
+        }
+
+        // Same fallback as ListAsync: an offset past the end returns no rows and therefore no
+        // windowed total.
+        if (rows.Count == 0 && offset > 0)
+        {
+            total = await CountAsync(searchPattern, industry, status, cancellationToken);
+        }
+
+        return new ClientDetailListResponse(rows, total, limit, offset);
+    }
+
     private async Task<int> CountAsync(
         string? searchPattern,
         string? industry,

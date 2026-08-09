@@ -7,9 +7,10 @@ import order is obvious. To add a domain: write `tools/<domain>.py` with a
 
 from __future__ import annotations
 
-from looped_in_mcp.tools import clients, identity
+from looped_in_mcp.tools import campaigns, clients, identity
 
 TOOL_MODULES = [
     identity,
     clients,
+    campaigns,
 ]
